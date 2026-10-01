@@ -10,6 +10,20 @@
  * whole project exists to avoid.
  */
 
+import {
+  InvalidJsonFieldError,
+  optionalNumber,
+  optionalString,
+  requireArray,
+  requireBoolean,
+  requireNonNegativeInteger,
+  requireNonNegativeNumber,
+  requireNumber,
+  requireObject,
+  requirePositiveNumber,
+  requireString,
+} from "./json.js";
+
 export type CommitStrategy = "vad" | "manual";
 
 export interface Segment {
@@ -90,57 +104,6 @@ export class InvalidRunRecordError extends Error {
   }
 }
 
-function requireNumber(value: unknown, path: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new InvalidRunRecordError(`${path} must be a finite number, got ${String(value)}`);
-  }
-  return value;
-}
-
-function requireString(value: unknown, path: string): string {
-  if (typeof value !== "string") {
-    throw new InvalidRunRecordError(`${path} must be a string, got ${typeof value}`);
-  }
-  return value;
-}
-
-function requireBoolean(value: unknown, path: string): boolean {
-  if (typeof value !== "boolean") {
-    throw new InvalidRunRecordError(`${path} must be a boolean, got ${typeof value}`);
-  }
-  return value;
-}
-
-function requireObject(value: unknown, path: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new InvalidRunRecordError(`${path} must be an object, got ${typeof value}`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function requireArray(value: unknown, path: string): unknown[] {
-  if (!Array.isArray(value)) {
-    throw new InvalidRunRecordError(`${path} must be an array, got ${typeof value}`);
-  }
-  return value;
-}
-
-function optionalString(value: unknown, path: string): string | null {
-  return value === null || value === undefined ? null : requireString(value, path);
-}
-
-function optionalNumber(value: unknown, path: string): number | null {
-  return value === null || value === undefined ? null : requireNumber(value, path);
-}
-
-function requirePositiveNumber(value: unknown, path: string): number {
-  const parsed = requireNumber(value, path);
-  if (parsed <= 0) {
-    throw new InvalidRunRecordError(`${path} must be positive, got ${parsed}`);
-  }
-  return parsed;
-}
-
 function optionalLogprob(value: unknown, path: string): number | null {
   const parsed = optionalNumber(value, path);
   // log(p) <= 0 for any probability p. A positive value means the field is
@@ -154,29 +117,30 @@ function optionalLogprob(value: unknown, path: string): number | null {
   return parsed;
 }
 
-function requireNonNegativeNumber(value: unknown, path: string): number {
-  const parsed = requireNumber(value, path);
-  if (parsed < 0) {
-    throw new InvalidRunRecordError(`${path} must not be negative, got ${parsed}`);
-  }
-  return parsed;
-}
-
-function requireNonNegativeInteger(value: unknown, path: string): number {
-  const parsed = requireNumber(value, path);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new InvalidRunRecordError(`${path} must be a non-negative integer, got ${parsed}`);
-  }
-  return parsed;
-}
-
 /**
  * Parse and validate a run record.
  *
  * Throws `InvalidRunRecordError` rather than returning a partial record, so a
  * broken fixture is visible instead of rendering as a plausible zero.
+ *
+ * The field checks themselves live in `json.ts`, because the comparison parser
+ * needs exactly the same ones and two copies of a rule this strict would be two
+ * places for it to drift. This function is the only adapter: a bad field in a run
+ * record is reported as a run-record error, so the page can say so in the record's
+ * own terms.
  */
 export function parseRunRecord(input: unknown): RunRecord {
+  try {
+    return readRunRecord(input);
+  } catch (error) {
+    if (error instanceof InvalidJsonFieldError) {
+      throw new InvalidRunRecordError(error.message);
+    }
+    throw error;
+  }
+}
+
+function readRunRecord(input: unknown): RunRecord {
   const root = requireObject(input, "runRecord");
 
   const strategy = requireString(root["commit_strategy"], "commit_strategy");
