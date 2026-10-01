@@ -51,14 +51,17 @@ function validRecord(): unknown {
       language_code: "en",
       sample_rate: 16_000,
       include_timestamps: true,
-      commit_strategy: "vad",
+      // The server does not echo commit_strategy; absence must parse.
+      commit_strategy: null,
       vad_silence_threshold_secs: 1.5,
       vad_threshold: 0.4,
       min_speech_duration_ms: 100,
       min_silence_duration_ms: 100,
     },
-    words: [{ text: "Zorblax", start_ms: 11_984, end_ms: 12_093, confidence: 0.97 }],
+    words: [{ text: "Zorblax", start_ms: 11_984, end_ms: 12_093, logprob: -0.42 }],
     api_key_present: false,
+    match_rule: "exact-text-case-and-punctuation-insensitive",
+    source_timestamp_unit: "seconds",
   };
 }
 
@@ -108,21 +111,33 @@ describe("malformed records fail loudly rather than defaulting to zero", () => {
       },
     ],
     [
-      "an echoed config whose strategy disagrees with the run",
+      "an echoed config naming a strategy that does not exist",
       (r) => {
         (r["echoed_config"] as Record<string, unknown>)["commit_strategy"] = "nonsense";
       },
     ],
     [
+      "an echoed sample rate of zero",
+      (r) => {
+        (r["echoed_config"] as Record<string, unknown>)["sample_rate"] = 0;
+      },
+    ],
+    [
+      "a confidence above 1 where a logprob is expected",
+      (r) => {
+        r["words"] = [{ text: "Zorblax", start_ms: 12_200, end_ms: 12_780, logprob: 42 }];
+      },
+    ],
+    [
       "a word that ends before it starts",
       (r) => {
-        r["words"] = [{ text: "Zorblax", start_ms: 12_093, end_ms: 11_984, confidence: 0.97 }];
+        r["words"] = [{ text: "Zorblax", start_ms: 12_093, end_ms: 11_984, logprob: -0.42 }];
       },
     ],
     [
       "a non-numeric timestamp",
       (r) => {
-        r["words"] = [{ text: "Zorblax", start_ms: "11984", end_ms: 12_093, confidence: 0.97 }];
+        r["words"] = [{ text: "Zorblax", start_ms: "11984", end_ms: 12_093, logprob: -0.42 }];
       },
     ],
     [

@@ -3,10 +3,46 @@
 A reproducible diagnostic for Scribe Realtime word-timestamp offsets, built in
 response to [elevenlabs-python#849](https://github.com/elevenlabs/elevenlabs-python/issues/849).
 
-**Status: foundation only.** The run-record contract and the audio fixture
-generator are built and tested. Nothing has been streamed to the Scribe API yet,
-so this project currently makes **no claim about whether the reported offset
-reproduces.** That question is the next ticket.
+**Status: one condition captured.** The pipeline runs end to end against the live
+API and the anchor condition has been recorded. **No claim is made about whether
+the reported offset reproduces** — that needs the same word compared across
+conditions, which is the next ticket.
+
+### First result, and two things it turned up
+
+The anchor condition (`vad_0`: no preceding speech segments, marker at 12.0s)
+returns the marker at **12,200 ms**. That is coherent, not a finding: each clip is
+padded with 120 ms of leading silence, so the word onset lands ~200 ms after the
+clip's insertion point. It is a baseline, not a measurement.
+
+Two things the first live run exposed, both of which would have produced confident
+wrong numbers:
+
+- **The realtime API returns word timestamps in _seconds_, not milliseconds.** A
+  marker at 12.0s came back as `12.2`. Storing that in a field named `start_ms`
+  would be wrong by 1000× and still look entirely plausible. The unit is now
+  recorded on every run record and the raw values stay in the unedited event.
+  Verified by moving the same marker to 6s and getting `6.18` back.
+- **`session_started` does not echo `commit_strategy`.** The first version
+  defaulted it to `"manual"`, which would have made every VAD run look like a
+  manual one — fabricating the experiment's key control. Absence is now recorded
+  as absence.
+
+## Running it
+
+```sh
+make setup      # dependencies
+make check      # lint, typecheck, both suites. No network, no API key.
+make fixtures   # generate the speech clips (needs the key, once)
+make capture    # stream one condition and report what came back
+```
+
+`make check` is the whole gate, and it needs no credentials. The key is read from
+`ELEVENLABS_API_KEY` and is used only by `make fixtures` and `make capture`.
+
+The committed clips in `fixtures/` are the ones the measurement depends on:
+regenerating them between runs would change the experiment, so `make fixtures`
+is deliberately explicit about overwriting them.
 
 ## The question
 
@@ -63,16 +99,15 @@ payload would be silently incomplete evidence, so the guard fails loudly instead
 
 ```sh
 make setup     # uv sync + npm install
-make check     # lint, typecheck, and both test suites
 ```
-
-`make check` is the whole gate. It also verifies the committed JSON Schema still
-matches the Python models that produce run records.
 
 ## Layout
 
-- `src/scribe_timeline/audio/` — the composer and the fixture family
+- `src/scribe_timeline/audio/` — the composer, the fixture family, speech checks
 - `src/scribe_timeline/records.py` — the run-record contract
+- `src/scribe_timeline/analysis/` — marker matching over a returned transcript
+- `src/scribe_timeline/capture/` — the capture plan, the network runner, the probe
+- `fixtures/` — the committed speech clips the measurement depends on
 - `schema/run-record.schema.json` — generated from the models; do not hand-edit
 - `viewer/src/runRecord.ts` — the TypeScript projection of that schema
 - `scripts/generate_json_schema.py` — regenerates the schema (`make schema`)
@@ -98,7 +133,16 @@ exact matching cannot tell those apart.
 
 **The echoed config is recorded, not the sent values.** The original report found
 the server echoing VAD durations that did not account for the observed offset.
-Sent and echoed values are therefore not assumed to agree.
+Sent and echoed values are therefore not assumed to agree. Where the server says
+nothing — as it does about `commit_strategy` — the record says nothing either.
+
+**The timestamp unit is recorded, not assumed.** The API returns seconds. The
+record carries `source_timestamp_unit` so the conversion to milliseconds is always
+checkable against the raw event.
+
+**`logprob` is not a confidence.** The API returns a log-probability: negative and
+unbounded below (−1.29 for the marker in synthetic speech). Storing it in a field
+constrained to 0..1 would have rejected the real value.
 
 ## What is deliberately absent
 

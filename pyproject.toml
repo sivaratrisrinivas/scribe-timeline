@@ -5,6 +5,7 @@ description = "Reproducible diagnostic for Scribe Realtime VAD word-timestamp of
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "elevenlabs>=1.0",
     "pydantic>=2.7",
 ]
 

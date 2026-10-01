@@ -5,12 +5,20 @@
       "description": "The session configuration the server echoed back.\n\nRecorded rather than the values that were sent: the original report found the\nserver echoing VAD durations that did not account for the observed offset, so\nsent and echoed values are not assumed to agree.",
       "properties": {
         "commit_strategy": {
-          "enum": [
-            "vad",
-            "manual"
+          "anyOf": [
+            {
+              "enum": [
+                "vad",
+                "manual"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "title": "Commit Strategy",
-          "type": "string"
+          "default": null,
+          "title": "Commit Strategy"
         },
         "include_timestamps": {
           "title": "Include Timestamps",
@@ -89,8 +97,7 @@
       "required": [
         "model_id",
         "sample_rate",
-        "include_timestamps",
-        "commit_strategy"
+        "include_timestamps"
       ],
       "title": "EchoedSessionConfig",
       "type": "object"
@@ -215,11 +222,15 @@
       "additionalProperties": false,
       "description": "One returned word and the interval the server assigned it.",
       "properties": {
-        "confidence": {
+        "end_ms": {
+          "minimum": 0,
+          "title": "End Ms",
+          "type": "number"
+        },
+        "logprob": {
           "anyOf": [
             {
-              "maximum": 1,
-              "minimum": 0,
+              "maximum": 0.0,
               "type": "number"
             },
             {
@@ -227,12 +238,7 @@
             }
           ],
           "default": null,
-          "title": "Confidence"
-        },
-        "end_ms": {
-          "minimum": 0,
-          "title": "End Ms",
-          "type": "number"
+          "title": "Logprob"
         },
         "start_ms": {
           "minimum": 0,
@@ -287,6 +293,11 @@
     "manifest": {
       "$ref": "#/$defs/Manifest"
     },
+    "match_rule": {
+      "default": "exact-text-case-and-punctuation-insensitive",
+      "title": "Match Rule",
+      "type": "string"
+    },
     "repeat_index": {
       "minimum": 0,
       "title": "Repeat Index",
@@ -299,6 +310,11 @@
     "schema_version": {
       "title": "Schema Version",
       "type": "integer"
+    },
+    "source_timestamp_unit": {
+      "default": "seconds",
+      "title": "Source Timestamp Unit",
+      "type": "string"
     },
     "words": {
       "default": [],

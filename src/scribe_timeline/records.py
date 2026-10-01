@@ -136,6 +136,25 @@ CREDENTIAL_KEY_MARKERS = (
     "bearer",
 )
 
+#: Names the API itself uses that trip the markers above without carrying a
+#: secret. Each is here because the server sent it in `session_started` and
+#: rejecting the run over it would be wrong:
+#:
+#: - `keyterms` -- Scribe's documented keyword-prompting list, e.g. a product name.
+#: - `max_tokens_to_recompute` -- a token *budget*, not a token.
+#: - `session_id` -- an opaque session handle the SDK needs, not a bearer secret.
+#:
+#: Adding an entry here is a decision to trust a name, so each needs the same
+#: justification. The failure mode is deliberately loud: a new legitimate field
+#: breaks the run rather than being silently recorded.
+BENIGN_EVENT_KEYS = frozenset(
+    {
+        "keyterms",
+        "max_tokens_to_recompute",
+        "session_id",
+    }
+)
+
 
 def _credential_keys(node: object, path: str = "payload") -> list[str]:
     """Every credential-shaped key reachable inside a free-form structure.
@@ -148,7 +167,9 @@ def _credential_keys(node: object, path: str = "payload") -> list[str]:
     if isinstance(node, dict):
         for key, value in node.items():
             key_text = str(key).lower()
-            if any(marker in key_text for marker in CREDENTIAL_KEY_MARKERS):
+            if key_text not in BENIGN_EVENT_KEYS and any(
+                marker in key_text for marker in CREDENTIAL_KEY_MARKERS
+            ):
                 found.append(f"{path}.{key}")
             found.extend(_credential_keys(value, f"{path}.{key}"))
     elif isinstance(node, (list, tuple)):
@@ -201,7 +222,15 @@ class EchoedSessionConfig(_Strict):
     language_code: str | None = None
     sample_rate: int = Field(gt=0)
     include_timestamps: bool
-    commit_strategy: CommitStrategy
+    commit_strategy: CommitStrategy | None = None
+    """What the server reported, which may be nothing.
+
+    The realtime `session_started` config does **not** echo `commit_strategy`
+    (observed 2026-10-02). Defaulting it here would fabricate the experiment's most
+    important control: a reader would conclude a VAD run was really a manual one.
+    `None` means the server did not say, and `RunRecord.commit_strategy` carries
+    what was actually requested.
+    """
     vad_silence_threshold_secs: float | None = None
     vad_threshold: float | None = None
     min_speech_duration_ms: int | None = None
@@ -214,7 +243,19 @@ class WordTiming(_Strict):
     text: str
     start_ms: float = Field(ge=0)
     end_ms: float = Field(ge=0)
-    confidence: float | None = Field(default=None, ge=0, le=1)
+    logprob: float | None = Field(default=None, le=0.0)
+    """The recogniser's log-probability for this word.
+
+    Named for what the API actually returns. It is a log-probability, so it is
+    negative and unbounded below -- typically around -0.1 for a confident word and
+    -1.3 for a doubtful one. Calling this a "confidence" and constraining it to 0..1
+    would misrepresent it, and clamping a real value to fit a wrong constraint would
+    hide exactly the low-confidence words worth noticing.
+
+    Constrained to at most zero because log(p) <= 0 for any probability p. A
+    positive value means the field carries something other than a log-probability,
+    which is worth failing on rather than displaying.
+    """
 
 
 class RunRecord(_Strict):
@@ -235,4 +276,20 @@ class RunRecord(_Strict):
 
     Recorded for honesty about the run environment. The credential itself is
     never stored, so run records remain safe to publish.
+    """
+    match_rule: str = "exact-text-case-and-punctuation-insensitive"
+    """How the measured marker was located in the returned transcript.
+
+    Travels with the record so a reader knows which word was measured, rather than
+    inferring it. A run whose marker was absent raises instead of recording a
+    fallback match, so this rule describes what actually happened.
+    """
+    source_timestamp_unit: str = "seconds"
+    """The unit the API returned word timestamps in, before conversion to ms.
+
+    The realtime `committed_transcript_with_timestamps` event was measured returning
+    *seconds* on 2026-10-02, despite the `start`/`end` field names and the
+    millisecond convention elsewhere. Storing those numbers in a `ms` field would be
+    wrong by 1000x and still look plausible, so the unit is recorded and the raw
+    values stay in `events` for verification.
     """

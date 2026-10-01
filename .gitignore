@@ -15,9 +15,8 @@ node_modules/
 .env.*
 !.env.example
 
-# Real captured runs. Published run records are added deliberately, by hand,
-# after checking they contain no credential. See docs/agents/ and the README's
-# Reproduce section.
+# Local capture output. A published run record is copied in deliberately, by hand,
+# after checking it contains no credential.
 runs/
-*.wav
-!fixtures/*.wav
+
+# The committed speech fixtures are raw PCM16, so they are not caught by *.wav.

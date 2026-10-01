@@ -43,7 +43,9 @@ export interface EchoedSessionConfig {
   readonly language_code: string | null;
   readonly sample_rate: number;
   readonly include_timestamps: boolean;
-  readonly commit_strategy: CommitStrategy;
+  /** What the server reported, which may be nothing: `session_started` does not
+   *  echo this. The record's own `commit_strategy` is what was requested. */
+  readonly commit_strategy: CommitStrategy | null;
   readonly vad_silence_threshold_secs: number | null;
   readonly vad_threshold: number | null;
   readonly min_speech_duration_ms: number | null;
@@ -52,9 +54,13 @@ export interface EchoedSessionConfig {
 
 export interface WordTiming {
   readonly text: string;
+  /** Converted to milliseconds on ingest. The API returns seconds; see
+   *  `source_timestamp_unit` on the record. */
   readonly start_ms: number;
   readonly end_ms: number;
-  readonly confidence: number | null;
+  /** Per-word recogniser log-probability. Negative and unbounded, e.g. -0.1 for a
+   *  confident word and -1.3 for a doubtful one. Not a probability. */
+  readonly logprob: number | null;
 }
 
 export interface RunRecord {
@@ -69,6 +75,11 @@ export interface RunRecord {
   readonly words: readonly WordTiming[];
   /** Whether a credential was in the environment. The credential is never stored. */
   readonly api_key_present: boolean;
+  /** How the measured marker was located in the returned transcript. Travels with
+   *  the record so a reader knows which word was measured. */
+  readonly match_rule: string;
+  /** The unit the API returned timestamps in, before conversion to ms. */
+  readonly source_timestamp_unit: string;
 }
 
 /** Thrown when a record cannot be trusted. Never swallowed into a default. */
@@ -130,6 +141,19 @@ function requirePositiveNumber(value: unknown, path: string): number {
   return parsed;
 }
 
+function optionalLogprob(value: unknown, path: string): number | null {
+  const parsed = optionalNumber(value, path);
+  // log(p) <= 0 for any probability p. A positive value means the field is
+  // carrying something other than a log-probability, which is worth failing on
+  // rather than displaying as a score.
+  if (parsed !== null && parsed > 0) {
+    throw new InvalidRunRecordError(
+      `${path} is a log-probability and cannot exceed 0, got ${parsed}`,
+    );
+  }
+  return parsed;
+}
+
 function requireNonNegativeNumber(value: unknown, path: string): number {
   const parsed = requireNumber(value, path);
   if (parsed < 0) {
@@ -142,14 +166,6 @@ function requireNonNegativeInteger(value: unknown, path: string): number {
   const parsed = requireNumber(value, path);
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw new InvalidRunRecordError(`${path} must be a non-negative integer, got ${parsed}`);
-  }
-  return parsed;
-}
-
-function optionalUnitInterval(value: unknown, path: string): number | null {
-  const parsed = optionalNumber(value, path);
-  if (parsed !== null && (parsed < 0 || parsed > 1)) {
-    throw new InvalidRunRecordError(`${path} must be between 0 and 1, got ${parsed}`);
   }
   return parsed;
 }
@@ -221,15 +237,17 @@ export function parseRunRecord(input: unknown): RunRecord {
   );
 
   const echoedRaw = requireObject(root["echoed_config"], "echoed_config");
-  const echoedStrategy = requireString(
-    echoedRaw["commit_strategy"],
-    "echoed_config.commit_strategy",
-  );
-  if (echoedStrategy !== "vad" && echoedStrategy !== "manual") {
+  // `session_started` does not echo this, so absence is legitimate and must not be
+  // filled in with a default: inventing "manual" would misreport a VAD run's
+  // control. The record's own `commit_strategy` carries what was requested.
+  const rawStrategy = echoedRaw["commit_strategy"] ?? null;
+  if (rawStrategy !== null && rawStrategy !== "vad" && rawStrategy !== "manual") {
     throw new InvalidRunRecordError(
-      `echoed_config.commit_strategy must be "vad" or "manual", got ${JSON.stringify(echoedStrategy)}`,
+      `echoed_config.commit_strategy must be "vad", "manual", or absent, ` +
+        `got ${JSON.stringify(rawStrategy)}`,
     );
   }
+  const echoedStrategy = rawStrategy as CommitStrategy | null;
 
   return {
     schema_version: requireNonNegativeInteger(root["schema_version"], "schema_version"),
@@ -305,9 +323,17 @@ export function parseRunRecord(input: unknown): RunRecord {
         text: requireString(word["text"], `words[${index}].text`),
         start_ms: start,
         end_ms: end,
-        confidence: optionalUnitInterval(word["confidence"], `words[${index}].confidence`),
+        logprob: optionalLogprob(word["logprob"], `words[${index}].logprob`),
       };
     }),
     api_key_present: requireBoolean(root["api_key_present"] ?? false, "api_key_present"),
+    match_rule: requireString(
+      root["match_rule"] ?? "exact-text-case-and-punctuation-insensitive",
+      "match_rule",
+    ),
+    source_timestamp_unit: requireString(
+      root["source_timestamp_unit"] ?? "seconds",
+      "source_timestamp_unit",
+    ),
   };
 }

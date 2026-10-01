@@ -275,11 +275,16 @@ def test_commit_strategy_uses_the_same_literals_as_the_schema(
     ts_source: str, schema: JSONObject
 ) -> None:
     root_enum = schema["properties"]["commit_strategy"]["enum"]
-    nested_enum = schema["$defs"]["EchoedSessionConfig"]["properties"]["commit_strategy"]["enum"]
+    # The echoed config's strategy is nullable: `session_started` does not send it,
+    # so the schema expresses it as an anyOf against null rather than a bare enum.
+    echoed = schema["$defs"]["EchoedSessionConfig"]["properties"]["commit_strategy"]
+    echoed_variants = echoed["anyOf"]
+    echoed_enum = next(v["enum"] for v in echoed_variants if "enum" in v)
+    assert any(v.get("type") == "null" for v in echoed_variants)
 
     assert 'type CommitStrategy = "vad" | "manual";' in ts_source
     assert set(root_enum) == {"vad", "manual"}
-    assert set(nested_enum) == set(root_enum)
+    assert set(echoed_enum) == set(root_enum)
 
 
 def test_schema_version_is_shared_between_both_sides(ts_source: str, schema: JSONObject) -> None:
