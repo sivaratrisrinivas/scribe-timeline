@@ -17,6 +17,15 @@ node_modules/
 
 # Local capture output. The published subset is copied into evidence/ by hand,
 # after checking it contains no credential.
-runs/
+#
+# Anchored to the repo root on purpose: a bare `runs/` would also match
+# evidence/runs/, which is the published evidence and must be committed.
+/runs/
 
 # The committed speech fixtures are raw PCM16, so they are not caught by *.wav.
+
+# The viewer bundle: run records copied from evidence/ plus a WAV per record,
+# rebuilt by `make viewer-export`. Derived from committed files, and ~7 MB, so it is
+# regenerated rather than committed. `make setup` does it.
+viewer/public/
+viewer/dist/

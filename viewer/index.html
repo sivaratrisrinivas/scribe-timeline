@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Declares "no icon" rather than omitting the tag, which stops the browser
+         asking for /favicon.ico and logging a 404 against a page that is otherwise
+         entirely local. -->
+    <link rel="icon" href="data:," />
+    <title>Scribe Realtime — a saved run</title>
+    <meta
+      name="description"
+      content="A saved Scribe Realtime run, replayed from committed clips. No capture was re-run and no API call was made to build this page."
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      This viewer draws a timeline with JavaScript. The run records it reads are plain JSON in
+      <code>viewer/public/runs/</code>, and the audio is a WAV beside them, so the evidence can be
+      read without this page.
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

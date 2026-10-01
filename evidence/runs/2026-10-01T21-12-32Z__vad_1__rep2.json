@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-10-01T21-12-32Z__vad_1__rep2",
+  "condition_id": "vad_1",
+  "commit_strategy": "vad",
+  "repeat_index": 2,
+  "manifest": {
+    "condition_id": "vad_1",
+    "sample_rate": 16000,
+    "sample_count": 288000,
+    "markers": {
+      "Zorblax": 192000
+    },
+    "segments": [
+      {
+        "clip_id": "earlier",
+        "start_sample": 0,
+        "sample_count": 16472,
+        "marker_text": null
+      },
+      {
+        "clip_id": "marker",
+        "start_sample": 192000,
+        "sample_count": 18701,
+        "marker_text": "Zorblax"
+      }
+    ]
+  },
+  "events": [
+    {
+      "type": "session_started",
+      "received_at_ms": 0.8379999999306165,
+      "clock_origin": "monotonic_since_connect",
+      "payload": {
+        "message_type": "session_started",
+        "session_id": "db98a0052c5b40fa909cf056b18cb679",
+        "config": {
+          "sample_rate": 16000,
+          "audio_format": "pcm_16000",
+          "language_code": "en",
+          "secondary_languages": [],
+          "timestamps_granularity": "word",
+          "vad_commit_strategy": true,
+          "vad_silence_threshold_secs": 1.5,
+          "vad_threshold": 0.4,
+          "min_speech_duration_ms": 100,
+          "min_silence_duration_ms": 100,
+          "max_tokens_to_recompute": 5,
+          "model_id": "scribe_v2_realtime",
+          "disable_logging": false,
+          "include_timestamps": true,
+          "include_language_detection": false,
+          "filter_background_audio": false,
+          "keyterms": [],
+          "no_verbatim": false,
+          "entity_detection": null,
+          "keepalive_interval_ms": null
+        }
+      }
+    },
+    {
+      "type": "partial_transcript",
+      "received_at_ms": 2443.2002089997695,
+      "clock_origin": "monotonic_since_connect",
+      "payload": {
+        "message_type": "partial_transcript",
+        "text": "Kolvig."
+      }
+    },
+    {
+      "type": "partial_transcript",
+      "received_at_ms": 2443.321108999953,
+      "clock_origin": "monotonic_since_connect",
+      "payload": {
+        "message_type": "partial_transcript",
+        "text": "Kolvig."
+      }
+    },
+    {
+      "type": "committed_transcript",
+      "received_at_ms": 2792.2140099999524,
+      "clock_origin": "monotonic_since_connect",
+      "payload": {
+        "message_type": "committed_transcript",
+        "text": "Kolvig."
+      }
+    },
+    {
+      "type": "committed_transcript_with_timestamps",
+      "received_at_ms": 2812.8843100002996,
+      "clock_origin": "monotonic_since_connect",
+      "payload": {
+        "message_type": "committed_transcript_with_timestamps",
+        "text": "Kolvig.",
+        "language_code": null,
+        "words": [
+          {
+            "text": "Kolvig.",
+            "start": 0.22,
+            "end": 0.64,
+            "type": "word",
+            "speaker_id": null,
+            "logprob": -0.8064602443150112,
+            "characters": [
+              {
+                "text": "K",
+                "start": 0.22,
+                "end": 0.28
+              },
+              {
+                "text": "o",
+                "start": 0.28,
+                "end": 0.32
+              },
+              {
+                "text": "l",
+                "start": 0.32,
+                "end": 0.38
+              },
+              {
+                "text": "v",
+                "start": 0.42,
+                "end": 0.46
+              },
+              {
+                "text": "i",
+                "start": 0.48,
+                "end": 0.52
+              },
+              {
+                "text": "g",
+                "start": 0.52,
+                "end": 0.64
+              },
+              {
+                "text": ".",
+                "start": 0.64,
+                "end": 0.64
+              }
+            ],
+            "channel_index": null
+          }
+        ]
+      }
+    },
+    {
+      "type": "partial_transcript",
+      "received_at_ms": 13913.608761000432,
+      "clock_origin": "monotonic_since_connect",
+      "payload": {
+        "message_type": "partial_transcript",
+        "text": "Zorblax."
+      }
+    },
+    {
+      "type": "committed_transcript",
+      "received_at_ms": 14902.722267999707,
+      "clock_origin": "monotonic_since_connect",
+      "payload": {
+        "message_type": "committed_transcript",
+        "text": "Zorblax."
+      }
+    },
+    {
+      "type": "committed_transcript_with_timestamps",
+      "received_at_ms": 14927.648467999461,
+      "clock_origin": "monotonic_since_connect",
+      "payload": {
+        "message_type": "committed_transcript_with_timestamps",
+        "text": "Zorblax.",
+        "language_code": null,
+        "words": [
+          {
+            "text": "Zorblax.",
+            "start": 12.3,
+            "end": 12.88,
+            "type": "word",
+            "speaker_id": null,
+            "logprob": -1.0184504985809326,
+            "characters": [
+              {
+                "text": "Z",
+                "start": 12.3,
+                "end": 12.38
+              },
+              {
+                "text": "o",
+                "start": 12.38,
+                "end": 12.42
+              },
+              {
+                "text": "r",
+                "start": 12.44,
+                "end": 12.52
+              },
+              {
+                "text": "b",
+                "start": 12.52,
+                "end": 12.56
+              },
+              {
+                "text": "l",
+                "start": 12.56,
+                "end": 12.6
+              },
+              {
+                "text": "a",
+                "start": 12.64,
+                "end": 12.68
+              },
+              {
+                "text": "x",
+                "start": 12.7,
+                "end": 12.88
+              },
+              {
+                "text": ".",
+                "start": 12.88,
+                "end": 12.88
+              }
+            ],
+            "channel_index": null
+          }
+        ]
+      }
+    }
+  ],
+  "echoed_config": {
+    "model_id": "scribe_v2_realtime",
+    "language_code": "en",
+    "sample_rate": 16000,
+    "include_timestamps": true,
+    "commit_strategy": null,
+    "vad_silence_threshold_secs": 1.5,
+    "vad_threshold": 0.4,
+    "min_speech_duration_ms": 100,
+    "min_silence_duration_ms": 100
+  },
+  "words": [
+    {
+      "text": "Kolvig.",
+      "start_ms": 220.0,
+      "end_ms": 640.0,
+      "logprob": -0.8064602443150112
+    },
+    {
+      "text": "Zorblax.",
+      "start_ms": 12300.0,
+      "end_ms": 12880.0,
+      "logprob": -1.0184504985809326
+    }
+  ],
+  "api_key_present": true,
+  "match_rule": "exact-text-case-and-punctuation-insensitive",
+  "source_timestamp_unit": "seconds"
+}

@@ -1,0 +1,257 @@
+/*
+ * Styling for the run viewer.
+ *
+ * Two rules the stylesheet has to honour, because they are the same rules the code
+ * holds:
+ *
+ * - **A marker reads differently from an ordinary word.** The insertion point and
+ *   the returned timestamp are different facts and must not look interchangeable.
+ * - **Silence looks like silence.** The gaps between words carry the VAD commit
+ *   boundaries, so the rail is visible and unlabelled rather than filled in.
+ *
+ * Colours are defined once as custom properties. No framework: the page has one
+ * component tree, and a dependency would cost more than it saves.
+ */
+
+:root {
+  --ink: #16181d;
+  --ink-soft: #5b6270;
+  --paper: #fbfbfa;
+  --rule: #d9dbe0;
+  --accent: #2f5bd7;
+  --marker: #b4531a;
+  --marker-wash: #fdf1e7;
+  --error: #a4262c;
+  --error-wash: #fdf2f2;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e8eaee;
+    --ink-soft: #a2a9b8;
+    --paper: #14161a;
+    --rule: #2c313a;
+    --accent: #8fb0ff;
+    --marker: #f0a868;
+    --marker-wash: #2a1f16;
+    --error: #ff9d9d;
+    --error-wash: #2a1717;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 2rem 1.25rem 4rem;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app {
+  max-width: 62rem;
+  margin: 0 auto;
+}
+
+.app h1 {
+  font-size: 1.35rem;
+  margin: 0 0 1rem;
+}
+
+.app__audio {
+  display: block;
+  width: 100%;
+  margin-bottom: 1.5rem;
+}
+
+.app--notice {
+  padding: 2rem 0;
+  color: var(--ink-soft);
+}
+
+.app--error {
+  color: var(--error);
+  background: var(--error-wash);
+  border-left: 3px solid var(--error);
+  padding: 0.75rem 1rem;
+  border-radius: 0 4px 4px 0;
+}
+
+.run-viewer__header {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1rem;
+}
+
+.run-viewer__header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.run-viewer__strategy {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+.run-viewer__run {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.run-viewer__provenance,
+.run-viewer__units {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+/*
+ * The track.
+ *
+ * A positioned box with word markers placed by inline `left`/`width` percentages,
+ * which is the same fraction the model computed and tested. The CSS does not do any
+ * positioning arithmetic of its own -- if it did, the drawn position and the tested
+ * position could disagree.
+ */
+.track {
+  position: relative;
+  height: 7.5rem;
+  margin: 2rem 0 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: linear-gradient(var(--rule), var(--rule)) center / 100% 1px no-repeat;
+}
+
+.track__rail {
+  position: absolute;
+  inset: auto 0 2.25rem 0;
+  height: 1px;
+  background: var(--rule);
+}
+
+/* Where the marker's clip was inserted. Deliberately a thin tick on the rail rather
+ * than a marker of its own: it is an insertion point, not a returned timestamp. */
+.track__insertion {
+  position: absolute;
+  bottom: 2.25rem;
+  width: 0;
+  height: 1.5rem;
+  border-left: 2px dashed var(--marker);
+}
+
+.word-marker {
+  position: absolute;
+  top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  /*
+   * The inline `width` is the word's true duration, which for a 400 ms word on an
+   * 18-second track is about 2% of the width -- accurate, and far too narrow to
+   * read. `min-width` lets the label overflow to the right of the position it is
+   * anchored to rather than being clipped. The left edge, which is what places the
+   * word, stays exactly where the timestamp says.
+   */
+  min-width: 5.5rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.word-marker:hover,
+.word-marker:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.word-marker[data-sounding="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper));
+  /* Labels overflow to overlap when words are close together, so the one being
+   * sounded comes forward rather than being hidden behind its neighbour. */
+  z-index: 3;
+}
+
+.word-marker[data-marker="true"] {
+  border-color: var(--marker);
+  background: var(--marker-wash);
+  font-weight: 600;
+}
+
+/* A word the audio does not contain. Still listed, still clickable, marked so it is
+ * not mistaken for something you can hear at that position. */
+.word-marker[data-within-audio="false"] {
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+.word-marker__text {
+  white-space: nowrap;
+}
+
+.word-marker__time {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.track__playhead {
+  position: absolute;
+  top: 0;
+  bottom: 1.5rem;
+  width: 2px;
+  background: var(--accent);
+  /* Above the markers, so the position is readable even when it lands on a word --
+   * which is most of the time, since the gaps are where it is unambiguous. */
+  z-index: 2;
+  pointer-events: none;
+}
+
+.marker-figures {
+  margin: 1.25rem 0 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--marker-wash);
+  border-left: 3px solid var(--marker);
+  border-radius: 0 4px 4px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.words {
+  width: 100%;
+  margin-top: 1.5rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.words caption {
+  text-align: left;
+  color: var(--ink-soft);
+  padding-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.words th,
+.words td {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.words thead th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.words tbody tr[data-within-audio="false"] {
+  /* Kept visible: a word outside the audio is part of the record. */
+  color: var(--ink-soft);
+  font-style: italic;
+}

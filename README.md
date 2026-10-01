@@ -60,11 +60,13 @@ All three would have produced confident wrong numbers rather than errors:
 ## Running it
 
 ```sh
-make setup      # dependencies
-make check      # lint, typecheck, both suites. No network, no API key.
-make fixtures   # generate the speech clips (needs the key, once)
-make capture    # stream one condition and report what came back
-make matrix     # run all four conditions x three repeats and compare them
+make setup         # dependencies, and export the viewer bundle
+make check         # lint, typecheck, both suites. No network, no API key.
+make viewer        # serve the viewer locally (no network, no API key)
+make viewer-export # rebuild the viewer bundle from saved records and clips
+make fixtures      # generate the speech clips (needs the key, once)
+make capture       # stream one condition and report what came back
+make matrix        # run all four conditions x three repeats and compare them
 ```
 
 `make check` is the whole gate, and it needs no credentials. The key is read from
@@ -84,6 +86,40 @@ as the live run, so a reader can check the published numbers without an account.
 The committed clips in `fixtures/` are the ones the measurement depends on:
 regenerating them between runs would change the experiment, so `make fixtures`
 is deliberately explicit about overwriting them.
+
+## The viewer
+
+`make viewer` serves a page that plays one saved run and draws what its timestamps
+claim: the audio, each returned word at the position the server gave it, and the
+marker's clip insertion point beside it. Click a word to hear it.
+
+It shows one run, chosen with `?run=<run_id>`. Reading two conditions side by side
+is the comparison's job, and a viewer that let a reader flip between single runs
+would invite them to treat a pair of them as a measurement.
+
+Three things it will not do:
+
+- **Subtract the marker's two positions.** The gap between the insertion point and
+  the returned timestamp is the measurement, and one run cannot produce a
+  measurement. The two figures are printed side by side instead, so the arithmetic
+  stays the reader's and stays visible.
+- **Snap the returned word to where its clip was inserted.** The word is drawn
+  where the server said it was — 12,380 ms under `vad_2`, not the 12,000 ms the
+  clip was placed at. That difference is the observation.
+- **Convert anything.** The API returned word timestamps in *seconds*; the run
+  record converts them to milliseconds once, on ingest, and the page says both
+  things. The unconverted values stay in the record's raw `events`. Every figure on
+  screen is the one in the run record, unchanged since it was written.
+
+A run record carries no audio — it carries the *layout* — so `make viewer-export`
+rebuilds the audio from the committed clips using the same `compose` the capture
+used, and refuses to export a record whose clips no longer match it. Rebuilding
+from new clips would play new audio under old timestamps and blame the server for
+the difference.
+
+Everything the page shows comes from files already in the repository. It makes no
+request other than for its own bundle, which a test asserts, and a run whose audio
+could not be rebuilt is listed with no player rather than with a broken one.
 
 ## The question
 
@@ -145,7 +181,7 @@ payload would be silently incomplete evidence, so the guard fails loudly instead
 ## Setup
 
 ```sh
-make setup     # uv sync + npm install
+make setup     # uv sync + npm install + export the viewer bundle
 ```
 
 ## Layout
@@ -158,8 +194,15 @@ make setup     # uv sync + npm install
   completion rule, and the two entry points (`probe`, `matrix`)
 - `fixtures/` — the committed speech clips the measurement depends on
 - `schema/run-record.schema.json` — generated from the models; do not hand-edit
+- `src/scribe_timeline/viewer/` — rebuilding a run record's audio, and refusing to
+  when the committed clips no longer match what was captured
 - `viewer/src/runRecord.ts` — the TypeScript projection of that schema
+- `viewer/src/timeline.ts` — the record as geometry: every position on screen is
+  computed here, where the sample/millisecond conversions are tested
+- `viewer/src/playback.ts` — the one place a media element's seconds meet the
+  record's milliseconds
 - `scripts/generate_json_schema.py` — regenerates the schema (`make schema`)
+- `scripts/export_viewer.py` — builds the viewer's static bundle (`make viewer-export`)
 
 `make check` fails if the committed schema drifts from the models, and a parity
 test asserts the TypeScript parser agrees with the schema on field names, types,
