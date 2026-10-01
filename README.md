@@ -3,20 +3,44 @@
 A reproducible diagnostic for Scribe Realtime word-timestamp offsets, built in
 response to [elevenlabs-python#849](https://github.com/elevenlabs/elevenlabs-python/issues/849).
 
-**Status: one condition captured.** The pipeline runs end to end against the live
-API and the anchor condition has been recorded. **No claim is made about whether
-the reported offset reproduces** — that needs the same word compared across
-conditions, which is the next ticket.
+**Status: the full matrix has been run.** Four conditions × three repeats, measured
+against the live API on 2026-10-02. **The reported drift reproduces**, at
+approximately 100 ms per preceding VAD commit, and it does not appear under manual
+commits. Every figure below comes from `make matrix` and can be re-derived from the
+saved run records at zero cost.
 
-### First result, and two things it turned up
+### The result
 
-The anchor condition (`vad_0`: no preceding speech segments, marker at 12.0s)
-returns the marker at **12,200 ms**. That is coherent, not a finding: each clip is
-padded with 120 ms of leading silence, so the word onset lands ~200 ms after the
-clip's insertion point. It is a baseline, not a measurement.
+Each condition holds the final marker's bytes and sample position identical and
+varies only how many speech segments precede it. The zero-preceding-commit
+condition is the anchor; every delta below is that condition's median marker
+timestamp minus the anchor's.
 
-Two things the first live run exposed, both of which would have produced confident
-wrong numbers:
+| condition | strategy | preceding commits | marker returned | delta vs anchor |
+| --- | --- | --- | --- | --- |
+| `vad_0` | VAD | 0 | 12,200 ms | — (anchor) |
+| `vad_1` | VAD | 1 | 12,300 ms | **+100 ms** |
+| `vad_2` | VAD | 2 | 12,380 ms | **+180 ms** |
+| `manual_2` | manual | 2 | 12,200 ms | **+0 ms** |
+
+Three repeats per condition, and all three returned identical timestamps in every
+condition, so the spread is 0 ms throughout.
+
+Against the [original report](https://github.com/elevenlabs/elevenlabs-python/issues/849)
+(+9 / +109 / +209 ms for zero / one / two preceding commits), the measured steps
+are **+100 ms** and **+180 ms**. Returned timestamps land on 20 ms steps, so a
+one-step difference is quantisation rather than disagreement; both measured steps
+are within one step of the reported ones.
+
+**The manual control is what makes this a finding rather than an observation.**
+`manual_2` played byte-identical audio to `vad_2` with the same number of preceding
+commits, differing only in who chose the commit boundaries — the server's voice
+activity detection, or the runner at known samples. Its marker timestamp did not
+move. So the offset tracks *VAD's commit triggering*, not the number of commits.
+
+### Three things earlier runs turned up
+
+All three would have produced confident wrong numbers rather than errors:
 
 - **The realtime API returns word timestamps in _seconds_, not milliseconds.** A
   marker at 12.0s came back as `12.2`. Storing that in a field named `start_ms`
@@ -26,7 +50,12 @@ wrong numbers:
 - **`session_started` does not echo `commit_strategy`.** The first version
   defaulted it to `"manual"`, which would have made every VAD run look like a
   manual one — fabricating the experiment's key control. Absence is now recorded
-  as absence.
+  as absence. Worth confirming with ElevenLabs whether this is documented.
+- **Returned timestamps are quantised to 20 ms.** Every marker timestamp observed
+  across twelve runs landed on a 20 ms multiple. Not documented by the API, so this
+  is an observation from the raw events rather than a stated guarantee — but it is
+  what sets the tolerance for calling a measurement a match, since the true step is
+  only knowable to within one tick.
 
 ## Running it
 
@@ -35,10 +64,22 @@ make setup      # dependencies
 make check      # lint, typecheck, both suites. No network, no API key.
 make fixtures   # generate the speech clips (needs the key, once)
 make capture    # stream one condition and report what came back
+make matrix     # run all four conditions x three repeats and compare them
 ```
 
 `make check` is the whole gate, and it needs no credentials. The key is read from
-`ELEVENLABS_API_KEY` and is used only by `make fixtures` and `make capture`.
+`ELEVENLABS_API_KEY` and is used only by `make fixtures`, `make capture`, and
+`make matrix`.
+
+`make matrix` takes about four minutes and costs well under a cent. To re-derive
+the comparison from records already on disk, spending nothing:
+
+```sh
+make matrix ARGS="--from-saved runs/*.json"
+```
+
+Rebuilding the report from saved records goes through exactly the same arithmetic
+as the live run, so a reader can check the published numbers without an account.
 
 The committed clips in `fixtures/` are the ones the measurement depends on:
 regenerating them between runs would change the experiment, so `make fixtures`
@@ -66,8 +107,14 @@ The zero-preceding-commit condition is the anchor. Every additional preceding
 commit's delta *is* the result. No timestamp is ever compared to an insertion
 point.
 
+A second control guards the conclusion. The same audio with the same number of
+preceding commits is streamed with commits requested explicitly rather than chosen
+by VAD. If that run's timestamp moves too, the operative variable is commit count;
+if it does not, the variable is VAD's triggering. Without it, "VAD causes drift"
+and "commits cause drift" are indistinguishable.
+
 The original reporter is credited as the originator of the finding. This adds
-runnable materials and, eventually, fresh dated evidence.
+runnable materials and fresh dated evidence.
 
 ## How it is put together
 
@@ -105,8 +152,10 @@ make setup     # uv sync + npm install
 
 - `src/scribe_timeline/audio/` — the composer, the fixture family, speech checks
 - `src/scribe_timeline/records.py` — the run-record contract
-- `src/scribe_timeline/analysis/` — marker matching over a returned transcript
-- `src/scribe_timeline/capture/` — the capture plan, the network runner, the probe
+- `src/scribe_timeline/analysis/` — marker matching, and the comparison that
+  produces every published number
+- `src/scribe_timeline/capture/` — the capture plan, the network runner, the
+  completion rule, and the two entry points (`probe`, `matrix`)
 - `fixtures/` — the committed speech clips the measurement depends on
 - `schema/run-record.schema.json` — generated from the models; do not hand-edit
 - `viewer/src/runRecord.ts` — the TypeScript projection of that schema
@@ -125,7 +174,30 @@ source of truth, and second sources of truth drift.
 
 **Marker matching is exact-text, and fails loudly.** A fuzzy fallback would
 return a plausible number for the wrong word. If the marker is absent, the run
-is an error — not a zero.
+is an error — not a zero. A word whose text matches but whose timing is missing
+is also a miss, for the same reason: a substituted zero would be a timestamp the
+server never sent.
+
+**A capture ends when the marker arrives, not when the first commit does.** Under
+VAD the earlier segments commit first, so "a commit came back" is not the same
+thing as "the measurement is possible". The wait is bounded by a commit cap and a
+timeout, and both are reported as outcomes *distinct* from finding the marker — a
+capture that ended any other way is incomplete evidence and fails rather than
+being written out.
+
+**The number of commits is recorded, not assumed.** The preceding-commit count is
+the experiment's independent variable, so each run's observed commit count is
+reported next to the count the fixture intended. A run that returned a different
+number is not the condition its name claims.
+
+**One number per condition is not a measurement.** Every condition keeps all its
+repeats and reports the spread across them. The anchor's own spread is folded into
+every interval, because a baseline that wobbles would otherwise manufacture drift
+in everything measured against it and blame the commits that followed.
+
+**The manual control states its conclusion.** The control exists to answer one
+question — do offsets accumulate without VAD? — so the report says so outright
+rather than leaving it to be inferred from a table row.
 
 **Earlier segments are unmarked.** They exist to induce a VAD commit; nothing
 needs to match them. Marking them would put one word at two placements, and
@@ -152,7 +224,9 @@ Applying a reported offset blindly would corrupt valid results and destroy the
 diagnostic's credibility.
 
 No claim is made about customer impact, internal priorities, or how often this
-behaviour occurs in production. It is one controlled experiment.
+behaviour occurs in production. Twelve runs of one synthetic word, on one model, on
+one day: a controlled experiment establishing that the effect exists and pointing
+at its cause. It is not a measurement of frequency, severity, or scope.
 
 ## Licence and conduct
 

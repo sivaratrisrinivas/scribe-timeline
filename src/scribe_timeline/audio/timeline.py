@@ -23,6 +23,15 @@ from dataclasses import dataclass
 SAMPLE_WIDTH_BYTES = 2  # mono PCM16
 _SILENCE = b"\x00"
 
+CLIP_SILENCE_MS = 120
+"""Leading and trailing silence built into every generated speech clip.
+
+Declared here rather than in the generator so the analysis layer can describe the
+gap between a marker timestamp and its clip's insertion point without importing the
+generator (and with it, the ElevenLabs SDK). One definition, so the figure quoted
+in a report cannot drift from the figure used to build the audio.
+"""
+
 
 @dataclass(frozen=True)
 class Clip:

@@ -17,7 +17,7 @@ would make exact-text matching ambiguous, which `compose` rejects outright.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from scribe_timeline.audio.timeline import Clip, Placement, TimelineSpec
 
@@ -85,3 +85,21 @@ def build_vad_family(
             )
         )
     return tuple(conditions)
+
+
+def manual_control(condition: Condition) -> Condition:
+    """The same timeline and commit count as `condition`, triggered manually.
+
+    This is the control. It plays byte-identical audio with the same number of
+    preceding commits, and differs only in *who* asked for the cut points: the
+    runner, at known samples, rather than the server's voice activity detection.
+
+    Sharing the timeline with the VAD condition it is compared against is the
+    whole point. A control built from different audio could differ for reasons
+    that have nothing to do with the commit strategy.
+
+    Renamed rather than reused, because a run record's `condition_id` and
+    `commit_strategy` are read together; leaving both as `vad_2` would make a
+    manual run look like a VAD one in a saved report.
+    """
+    return replace(condition, id=f"manual_{condition.prior_segment_count}")

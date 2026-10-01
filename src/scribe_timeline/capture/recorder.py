@@ -23,6 +23,7 @@ from typing import Any
 
 from scribe_timeline.analysis.matching import MATCH_RULE, locate_marker
 from scribe_timeline.audio.timeline import Clip
+from scribe_timeline.capture.completion import TIMESTAMPED_EVENT
 from scribe_timeline.capture.plan import CapturePlan
 from scribe_timeline.records import (
     EchoedSessionConfig,
@@ -34,7 +35,6 @@ from scribe_timeline.records import (
 
 SCHEMA_VERSION = 1
 
-_TIMESTAMPED_EVENT = "committed_transcript_with_timestamps"
 _SESSION_STARTED = "session_started"
 
 #: Unit the realtime API actually returns word timestamps in.
@@ -91,7 +91,7 @@ class SessionCapture:
         """
         words: list[dict[str, Any]] = []
         for event in self._events:
-            if event.type != _TIMESTAMPED_EVENT:
+            if event.type != TIMESTAMPED_EVENT:
                 continue
             raw = event.payload.get("words")
             if isinstance(raw, list):
@@ -162,7 +162,7 @@ def build_run_record(
         schema_version=SCHEMA_VERSION,
         run_id=run_id,
         condition_id=plan.condition_id,
-        commit_strategy=plan.commit_strategy,  # type: ignore[arg-type]
+        commit_strategy=plan.commit_strategy,
         repeat_index=repeat_index,
         manifest=Manifest.from_composition(
             condition_id=plan.condition_id,

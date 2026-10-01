@@ -122,6 +122,26 @@ class Manifest(_Strict):
         )
 
 
+def prior_segment_count(manifest: Manifest, marker_text: str) -> int:
+    """How many clips were placed before the measured marker.
+
+    Derived from the manifest rather than recorded as a field of its own. The
+    manifest already describes what was played, so a separately declared count
+    would be a second source of truth that could disagree with the audio -- and a
+    count that disagrees with the audio would quietly mislabel every delta
+    computed from it.
+
+    Only unmarked segments count. A segment carrying marker text is a marker
+    placement, not something preceding one.
+    """
+    marker_sample = manifest.markers[marker_text]
+    return sum(
+        1
+        for segment in manifest.segments
+        if segment.start_sample < marker_sample and segment.marker_text is None
+    )
+
+
 #: Substrings that mark a key as credential-shaped. Matched case-insensitively
 #: against every key at every depth of a free-form payload.
 CREDENTIAL_KEY_MARKERS = (

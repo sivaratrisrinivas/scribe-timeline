@@ -1,4 +1,4 @@
-.PHONY: help setup test lint typecheck schema check viewer-test fixtures capture
+.PHONY: help setup test lint typecheck schema check viewer-test fixtures capture matrix
 
 help:
 	@echo "setup        Install Python and viewer dependencies"
@@ -9,6 +9,7 @@ help:
 	@echo "check        Everything CI runs (no network, no API key)"
 	@echo "fixtures     Generate the speech clips (needs ELEVENLABS_API_KEY, once)"
 	@echo "capture      Stream one condition to Scribe (needs ELEVENLABS_API_KEY)"
+	@echo "matrix       Run the full comparison matrix (needs ELEVENLABS_API_KEY)"
 
 setup:
 	uv sync --extra dev
@@ -36,3 +37,6 @@ fixtures:
 
 capture:
 	uv run python -m scribe_timeline.capture.probe
+
+matrix:
+	uv run python -m scribe_timeline.capture.matrix $(ARGS)

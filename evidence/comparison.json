@@ -1,0 +1,178 @@
+{
+  "marker_text": "Zorblax",
+  "anchor_condition_id": "vad_0",
+  "match_rule_note": "Every delta differences one condition's median marker timestamp against the anchor's. No timestamp is compared to a clip insertion point.",
+  "drift_detected": true,
+  "conditions": [
+    {
+      "condition_id": "vad_0",
+      "commit_strategy": "vad",
+      "prior_segment_count": 0,
+      "observed_commit_count": [
+        1,
+        1,
+        1
+      ],
+      "repeat_count": 3,
+      "marker_start_ms": [
+        12200.0,
+        12200.0,
+        12200.0
+      ],
+      "median_marker_ms": 12200.0,
+      "spread_ms": 0.0,
+      "is_anchor": true,
+      "delta_vs_anchor_ms": null,
+      "delta_spread_ms": null,
+      "delta_interval_ms": null
+    },
+    {
+      "condition_id": "vad_1",
+      "commit_strategy": "vad",
+      "prior_segment_count": 1,
+      "observed_commit_count": [
+        2,
+        2,
+        2
+      ],
+      "repeat_count": 3,
+      "marker_start_ms": [
+        12300.0,
+        12300.0,
+        12300.0
+      ],
+      "median_marker_ms": 12300.0,
+      "spread_ms": 0.0,
+      "is_anchor": false,
+      "delta_vs_anchor_ms": 100.0,
+      "delta_spread_ms": 0.0,
+      "delta_interval_ms": [
+        100.0,
+        100.0
+      ]
+    },
+    {
+      "condition_id": "vad_2",
+      "commit_strategy": "vad",
+      "prior_segment_count": 2,
+      "observed_commit_count": [
+        3,
+        3,
+        3
+      ],
+      "repeat_count": 3,
+      "marker_start_ms": [
+        12380.0,
+        12380.0,
+        12380.0
+      ],
+      "median_marker_ms": 12380.0,
+      "spread_ms": 0.0,
+      "is_anchor": false,
+      "delta_vs_anchor_ms": 180.0,
+      "delta_spread_ms": 0.0,
+      "delta_interval_ms": [
+        180.0,
+        180.0
+      ]
+    },
+    {
+      "condition_id": "manual_2",
+      "commit_strategy": "manual",
+      "prior_segment_count": 2,
+      "observed_commit_count": [
+        3,
+        3,
+        3
+      ],
+      "repeat_count": 3,
+      "marker_start_ms": [
+        12200.0,
+        12200.0,
+        12200.0
+      ],
+      "median_marker_ms": 12200.0,
+      "spread_ms": 0.0,
+      "is_anchor": false,
+      "delta_vs_anchor_ms": 0.0,
+      "delta_spread_ms": 0.0,
+      "delta_interval_ms": [
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "condition_id": "vad_1",
+      "measured_step_ms": 100.0,
+      "measured_interval_ms": [
+        100.0,
+        100.0
+      ],
+      "claimed_step_ms": 100.0,
+      "difference_ms": 0.0,
+      "reproduces": true
+    },
+    {
+      "condition_id": "vad_2",
+      "measured_step_ms": 180.0,
+      "measured_interval_ms": [
+        180.0,
+        180.0
+      ],
+      "claimed_step_ms": 200.0,
+      "difference_ms": -20.0,
+      "reproduces": true
+    }
+  ],
+  "control": {
+    "condition_id": "manual_2",
+    "manual_condition_id": "manual_2",
+    "compares_to_condition_id": "vad_2",
+    "manual_delta_ms": 0.0,
+    "vad_delta_ms": 180.0,
+    "claimed_manual_step_ms": 1.0,
+    "manual_accumulates": false,
+    "manual_matches_claim": true,
+    "interpretation": "manual_2 played byte-identical audio to vad_2 with the same number of preceding commits, differing only in who chose the commit boundaries. Its marker timestamp did not move, so offsets do not accumulate under manual commits and the drift seen under VAD is attributable to VAD's commit triggering."
+  },
+  "context": {
+    "conditions": [
+      {
+        "condition_id": "vad_0",
+        "insertion_point_gap_ms": 200.0,
+        "clip_padding_ms": 120,
+        "note": "Marker timestamp minus the sample its clip was inserted at. Not a measured offset, and excluded from every delta. Contains the clip's 120 ms of leading silence plus the word's onset within the clip, which is not precisely known; for any condition with preceding commits it also contains their effect."
+      },
+      {
+        "condition_id": "vad_1",
+        "insertion_point_gap_ms": 300.0,
+        "clip_padding_ms": 120,
+        "note": "Marker timestamp minus the sample its clip was inserted at. Not a measured offset, and excluded from every delta. Contains the clip's 120 ms of leading silence plus the word's onset within the clip, which is not precisely known; for any condition with preceding commits it also contains their effect."
+      },
+      {
+        "condition_id": "vad_2",
+        "insertion_point_gap_ms": 380.0,
+        "clip_padding_ms": 120,
+        "note": "Marker timestamp minus the sample its clip was inserted at. Not a measured offset, and excluded from every delta. Contains the clip's 120 ms of leading silence plus the word's onset within the clip, which is not precisely known; for any condition with preceding commits it also contains their effect."
+      },
+      {
+        "condition_id": "manual_2",
+        "insertion_point_gap_ms": 200.0,
+        "clip_padding_ms": 120,
+        "note": "Marker timestamp minus the sample its clip was inserted at. Not a measured offset, and excluded from every delta. Contains the clip's 120 ms of leading silence plus the word's onset within the clip, which is not precisely known; for any condition with preceding commits it also contains their effect."
+      }
+    ],
+    "note": "These figures are not the measurement. Every delta in this report is one condition's median marker timestamp minus the anchor's."
+  },
+  "timestamp_quantum_ms": 20.0,
+  "claims_source": "elevenlabs-python#849",
+  "claims_filed": "2026-08-19",
+  "reporter_claimed_offset_ms": {
+    "vad_0": 9.0,
+    "vad_1": 109.0,
+    "vad_2": 209.0
+  },
+  "reporter_claimed_manual_offset_ms": 10.0
+}

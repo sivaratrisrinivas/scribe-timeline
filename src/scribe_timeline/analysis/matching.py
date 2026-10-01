@@ -43,22 +43,41 @@ def _normalise(text: str) -> str:
     return _EDGE_PUNCTUATION.sub("", text).casefold()
 
 
+def _timing(word: dict[str, object], key: str) -> float:
+    """Read a timing field, or refuse the word.
+
+    A word whose text matches but whose timing is missing or non-numeric is not a
+    measurement. Substituting zero would invent a timestamp the server never sent
+    and it would still look entirely plausible, so the word is skipped and the
+    miss is reported as a miss.
+    """
+    value = word.get(key)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"word {word.get('text', '')!r} has no usable {key!r}: {value!r}")
+    return float(value)
+
+
 def locate_marker(words: list[dict[str, object]], marker_text: str) -> MatchedWord:
     """Find `marker_text` in the returned words and return its timing.
 
-    Raises `MarkerNotFound` if it is absent, listing what was actually returned so
-    the failure is diagnosable from the error alone.
+    Raises `MarkerNotFound` if it is absent or unusable, listing what was actually
+    returned so the failure is diagnosable from the error alone.
     """
     wanted = _normalise(marker_text)
     for word in words:
         text = str(word.get("text", ""))
         if _normalise(text) != wanted:
             continue
+        try:
+            start_ms = _timing(word, "start")
+            end_ms = _timing(word, "end")
+        except ValueError:
+            continue
         raw_logprob = word.get("logprob")
         return MatchedWord(
             text=text,
-            start_ms=float(word["start"]),  # type: ignore[arg-type]
-            end_ms=float(word["end"]),  # type: ignore[arg-type]
+            start_ms=start_ms,
+            end_ms=end_ms,
             logprob=float(raw_logprob) if isinstance(raw_logprob, int | float) else None,
         )
 

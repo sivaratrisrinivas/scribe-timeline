@@ -16,7 +16,13 @@ import pytest
 from pcm_fixtures import SAMPLE_RATE
 from scribe_timeline.audio.family import MARKER_TEXT, Condition, build_vad_family
 from scribe_timeline.audio.timeline import Clip, compose
-from scribe_timeline.capture.plan import CHUNK_SAMPLES, CapturePlan, build_plan, plan_chunks
+from scribe_timeline.capture.plan import (
+    CHUNK_SAMPLES,
+    CapturePlan,
+    boundaries_due,
+    build_plan,
+    plan_chunks,
+)
 
 CHUNK_MS = 100
 
@@ -105,3 +111,92 @@ def test_plan_records_its_own_timing_constants(family: tuple[Condition, ...]) ->
     assert plan.chunk_samples == CHUNK_SAMPLES
     assert plan.chunk_interval_ms == pytest.approx(CHUNK_MS)
     assert plan.expected_duration_ms == pytest.approx(14_000.0)
+
+
+# --- Manual commit boundaries -------------------------------------------------
+#
+# The control condition needs commits the *server* would not make. Under VAD the
+# server decides where to cut; under manual it never cuts at all, so the only way
+# to give the control the same number of preceding commits as a VAD condition is
+# to ask for them at chosen sample positions.
+#
+# Getting these positions wrong would not fail -- it would quietly give the
+# control a different number of commits than the condition it is compared
+# against, which is the one thing the control exists to hold fixed.
+
+
+def test_a_manual_boundary_sits_at_the_end_of_each_clip_before_the_marker(
+    family: tuple[Condition, ...],
+) -> None:
+    clips = _clips()
+    earlier_length = clips["earlier"].sample_count
+
+    plan = build_plan(
+        condition=family[2], clips=clips, marker_text=MARKER_TEXT, chunk_samples=CHUNK_SAMPLES
+    )
+
+    # family[2] places "earlier" at 0s and 6s; each boundary is that clip's end.
+    assert plan.manual_commit_boundaries == (
+        earlier_length,
+        SAMPLE_RATE * 6 + earlier_length,
+    )
+
+
+def test_the_marker_clip_is_never_a_manual_boundary(family: tuple[Condition, ...]) -> None:
+    """The runner always flushes after the last chunk, so a boundary there is redundant."""
+    clips = _clips()
+    marker_start = SAMPLE_RATE * 12
+
+    plan = build_plan(
+        condition=family[2], clips=clips, marker_text=MARKER_TEXT, chunk_samples=CHUNK_SAMPLES
+    )
+
+    assert all(boundary < marker_start for boundary in plan.manual_commit_boundaries)
+
+
+def test_a_condition_with_nothing_before_the_marker_has_no_boundaries(
+    family: tuple[Condition, ...],
+) -> None:
+    plan = build_plan(
+        condition=family[0], clips=_clips(), marker_text=MARKER_TEXT, chunk_samples=CHUNK_SAMPLES
+    )
+
+    assert plan.manual_commit_boundaries == ()
+
+
+def test_boundaries_are_ordered_and_inside_the_audio(family: tuple[Condition, ...]) -> None:
+    plan = build_plan(
+        condition=family[2], clips=_clips(), marker_text=MARKER_TEXT, chunk_samples=CHUNK_SAMPLES
+    )
+
+    boundaries = plan.manual_commit_boundaries
+    assert list(boundaries) == sorted(boundaries)
+    assert all(0 < boundary < plan.sample_count for boundary in boundaries)
+
+
+def test_a_boundary_landing_exactly_on_a_chunk_end_counts(family: tuple[Condition, ...]) -> None:
+    """Off-by-one here drops or duplicates a commit, changing the control's shape."""
+    boundaries = (CHUNK_SAMPLES * 3, CHUNK_SAMPLES * 5)
+
+    due = boundaries_due(CHUNK_SAMPLES * 3, boundaries, already_sent=0)
+
+    assert due == 1
+
+
+def test_boundaries_already_committed_are_not_sent_twice(
+    family: tuple[Condition, ...],
+) -> None:
+    boundaries = (CHUNK_SAMPLES * 3, CHUNK_SAMPLES * 5)
+
+    due = boundaries_due(CHUNK_SAMPLES * 9, boundaries, already_sent=1)
+
+    assert due == 1  # the second boundary only; the first was already sent
+
+
+def test_boundaries_due_never_goes_backwards(family: tuple[Condition, ...]) -> None:
+    """Chunks are sent in order, but a defensive clamp keeps the count honest."""
+    boundaries = (CHUNK_SAMPLES * 3, CHUNK_SAMPLES * 5)
+
+    due = boundaries_due(CHUNK_SAMPLES, boundaries, already_sent=2)
+
+    assert due == 0

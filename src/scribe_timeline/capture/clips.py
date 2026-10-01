@@ -22,7 +22,19 @@ from elevenlabs.client import ElevenLabs
 
 from scribe_timeline.audio.family import EARLIER_CLIP_ID, MARKER_CLIP_ID, MARKER_TEXT
 from scribe_timeline.audio.speech import assert_speakable
-from scribe_timeline.audio.timeline import Clip
+from scribe_timeline.audio.timeline import CLIP_SILENCE_MS, Clip
+
+__all__ = [
+    "CLIP_SILENCE_MS",
+    "CLIP_TEXTS",
+    "EARLIER_TEXT",
+    "FIXTURE_DIR",
+    "FixtureError",
+    "clip_path",
+    "generate_clips",
+    "load_clips",
+    "synthesise_clip",
+]
 
 FIXTURE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "fixtures"
 
@@ -31,9 +43,10 @@ MODEL_ID = "eleven_multilingual_v2"
 OUTPUT_FORMAT = "pcm_16000"
 SAMPLE_RATE = 16_000
 
-#: Each clip is one word plus surrounding silence, so the composer's placement
-#: arithmetic is not fighting a clip with long leading or trailing silence in it.
-CLIP_SILENCE_MS = 120
+#: Re-exported from `audio.timeline`, where it is declared. Each clip is one word
+#: plus surrounding silence, so the composer's placement arithmetic is not fighting
+#: a clip with long leading or trailing silence in it.
+CLIP_SILENCE_MS = CLIP_SILENCE_MS
 
 #: The word spoken before the marker. Distinct from the marker so exact matching
 #: has exactly one candidate to find.
