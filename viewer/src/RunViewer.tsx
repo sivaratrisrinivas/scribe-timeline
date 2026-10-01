@@ -21,7 +21,12 @@
 import { useEffect, useState } from "react";
 
 import type { Playback } from "./playback.js";
-import { activeWordAt, type Timeline, type TimelineWord } from "./timeline.js";
+import {
+  activeWordAt,
+  type Timeline,
+  type TimelineCommit,
+  type TimelineWord,
+} from "./timeline.js";
 
 /** A millisecond figure as a reader reads it, without decimal noise. */
 function formatMs(value: number): string {
@@ -72,6 +77,49 @@ export interface RunViewerProps {
   readonly playback: Playback;
 }
 
+/** The silence one commit was cut from, as a reader is told about it.
+ *
+ *  The record does not say where inside this gap the server committed -- only that
+ *  the previous commit ended here and this one began there. So the band is the
+ *  whole of what can honestly be claimed, and the wording says so.
+ */
+function boundaryLabel(commit: TimelineCommit): string {
+  return `commit ${commit.commitIndex} was cut somewhere between ${formatMs(commit.boundaryFromMs!)} ms and ${formatMs(commit.boundaryToMs!)} ms; the record does not say where within it`;
+}
+
+function CommitBoundary({ commit }: { readonly commit: TimelineCommit }) {
+  if (commit.boundaryFromFraction === null || commit.boundaryToFraction === null) return null;
+  return (
+    <div
+      className="track__boundary"
+      data-testid="commit-boundary"
+      style={{
+        left: percent(commit.boundaryFromFraction),
+        width: percent(Math.max(commit.boundaryToFraction - commit.boundaryFromFraction, 0.002)),
+      }}
+      title={boundaryLabel(commit)}
+      aria-hidden="true"
+    />
+  );
+}
+
+function CommitSpan({ commit }: { readonly commit: TimelineCommit }) {
+  if (commit.firstFraction === null || commit.lastFraction === null) return null;
+  return (
+    <div
+      className="track__commit"
+      data-testid="commit-span"
+      data-commit-index={String(commit.commitIndex)}
+      style={{
+        left: percent(commit.firstFraction),
+        width: percent(Math.max(commit.lastFraction - commit.firstFraction, 0.004)),
+      }}
+      title={`commit ${commit.commitIndex}: ${commit.wordCount} word(s) from ${formatMs(commit.firstWordMs!)} ms to ${formatMs(commit.lastWordMs!)} ms`}
+      aria-hidden="true"
+    />
+  );
+}
+
 export function RunViewer({ timeline, playback }: RunViewerProps) {
   const [timeMs, setTimeMs] = useState<number | null>(null);
   useEffect(() => playback.subscribe(setTimeMs), [playback]);
@@ -109,6 +157,12 @@ export function RunViewer({ timeline, playback }: RunViewerProps) {
         aria-label={`Returned words across ${formatMs(timeline.durationMs)} ms of audio`}
       >
         <div className="track__rail" aria-hidden="true" />
+        {timeline.commits.map((commit) => (
+          <CommitBoundary key={`boundary-${commit.commitIndex}`} commit={commit} />
+        ))}
+        {timeline.commits.map((commit) => (
+          <CommitSpan key={`commit-${commit.commitIndex}`} commit={commit} />
+        ))}
         {timeline.markers.map((marker) => (
           <div
             key={marker.text}
@@ -135,6 +189,73 @@ export function RunViewer({ timeline, playback }: RunViewerProps) {
           />
         )}
       </div>
+
+      <section className="commits" aria-labelledby="commits-heading">
+        <h3 id="commits-heading" className="commits__heading">
+          Where the server cut
+        </h3>
+        <p className="commits__note">
+          {timeline.commitStrategy === "manual" ? (
+            <>
+              Under manual commits the runner requested these cut points at known samples, once the
+              speech before them had been streamed in full.
+            </>
+          ) : (
+            <>
+              Under VAD the server&rsquo;s voice activity detection chose these cut points, which is
+              the variable under test.
+            </>
+          )}{" "}
+          Each band on the track is the silence a commit was cut from, and the record does not say
+          where within it the cut fell.
+        </p>
+        {timeline.commits.length === 0 ? (
+          <p className="commits__none">
+            This run returned no timestamped commit, so there is no boundary to mark. The words
+            below are the whole of what it said.
+          </p>
+        ) : (
+          <table className="commits__table">
+            <caption>
+              One row per timestamped commit, in the order they arrived. The position of a commit is
+              where the server placed its first and last returned words.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Commit</th>
+                <th scope="col">Words</th>
+                <th scope="col">First word (ms)</th>
+                <th scope="col">Last word (ms)</th>
+                <th scope="col">Cut from</th>
+              </tr>
+            </thead>
+            <tbody>
+              {timeline.commits.map((commit) => (
+                <tr
+                  key={commit.commitIndex}
+                  data-testid="commit-row"
+                  data-commit-index={String(commit.commitIndex)}
+                  data-placed={String(commit.firstWordMs !== null)}
+                >
+                  <th scope="row">{commit.commitIndex}</th>
+                  <td>{commit.wordCount}</td>
+                  <td>
+                    {commit.firstWordMs === null ? "no word returned" : formatMs(commit.firstWordMs)}
+                  </td>
+                  <td>
+                    {commit.lastWordMs === null ? "no word returned" : formatMs(commit.lastWordMs)}
+                  </td>
+                  <td>
+                    {commit.boundaryFromMs === null || commit.boundaryToMs === null
+                      ? "—"
+                      : `${formatMs(commit.boundaryFromMs)}–${formatMs(commit.boundaryToMs)} ms`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
 
       {timeline.markers.map((marker) => (
         <p key={marker.text} className="marker-figures">

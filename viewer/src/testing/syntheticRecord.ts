@@ -27,6 +27,18 @@ export const MARKER_TEXT = "Zorblax";
 /** The returned marker timestamp under VAD with two preceding commits. */
 export const MARKER_RETURNED_MS = 12_380;
 
+/** The only event type that carries word timestamps, and so the only one a commit
+ *  can be read from. Mirrors `scribe_timeline.capture.completion.TIMESTAMPED_EVENT`. */
+export const TIMESTAMPED_EVENT = "committed_transcript_with_timestamps";
+
+/** One commit's place on the audio clock, as `make viewer-export` writes it. */
+export interface SyntheticCommit {
+  readonly commit_index: number;
+  readonly word_count: number;
+  readonly first_word_ms: number | null;
+  readonly last_word_ms: number | null;
+}
+
 export interface SyntheticOptions {
   /** Sample positions of the unmarked speech segments placed before the marker. */
   readonly priorStarts?: readonly number[];
@@ -105,6 +117,33 @@ export function syntheticRecordJson(options: SyntheticOptions = {}): unknown {
         clock_origin: "monotonic_since_connect",
         payload: { model_id: "scribe_v2_realtime", session_id: "opaque" },
       },
+      // One commit per speech segment, the way VAD actually cut this timeline. The
+      // word timings are in seconds here, exactly as the API returns them: the
+      // conversion belongs to the runner, and the viewer never does it.
+      ...priorStarts.map((startSample, index) => ({
+        type: TIMESTAMPED_EVENT,
+        received_at_ms: 1.4 + index * 6.1,
+        clock_origin: "monotonic_since_connect",
+        payload: {
+          words: [
+            { text: "Kolvig.", start: (startMs(startSample, sampleRate) + 220) / 1000, end: (startMs(startSample, sampleRate) + 640) / 1000 },
+          ],
+        },
+      })),
+      ...(markerStartMs === null
+        ? []
+        : [
+            {
+              type: TIMESTAMPED_EVENT,
+              received_at_ms: 13.9,
+              clock_origin: "monotonic_since_connect",
+              payload: {
+                words: [
+                  { text: "Zorblax.", start: markerStartMs / 1000, end: (markerStartMs + 600) / 1000 },
+                ],
+              },
+            },
+          ]),
     ],
     echoed_config: {
       model_id: "scribe_v2_realtime",
@@ -123,4 +162,41 @@ export function syntheticRecordJson(options: SyntheticOptions = {}): unknown {
     match_rule: matchRule,
     source_timestamp_unit: "seconds",
   };
+}
+
+function startMs(startSample: number, sampleRate: number): number {
+  return (startSample * 1000) / sampleRate;
+}
+
+/** The commits the export would write for the default synthetic record.
+ *
+ *  Derived by hand from the events above rather than by running the exporter,
+ *  because the point is to be an independent statement of where the commits fell.
+ *  `syntheticGeometry.test.ts` checks these against a published run record, so a
+ *  drifted constant fails there rather than quietly describing different evidence.
+ */
+export function syntheticCommitsJson(
+  options: Parameters<typeof syntheticRecordJson>[0] = {},
+): SyntheticCommit[] {
+  const { priorStarts = [0, 96_000], markerStartMs = MARKER_RETURNED_MS, sampleRate = SAMPLE_RATE } =
+    options;
+
+  return [
+    ...priorStarts.map((startSample, index) => ({
+      commit_index: index + 1,
+      word_count: 1,
+      first_word_ms: startMs(startSample, sampleRate) + 220,
+      last_word_ms: startMs(startSample, sampleRate) + 640,
+    })),
+    ...(markerStartMs === null
+      ? []
+      : [
+          {
+            commit_index: priorStarts.length + 1,
+            word_count: 1,
+            first_word_ms: markerStartMs,
+            last_word_ms: markerStartMs + 600,
+          },
+        ]),
+  ];
 }

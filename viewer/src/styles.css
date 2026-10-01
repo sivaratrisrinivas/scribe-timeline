@@ -64,6 +64,217 @@ body {
   margin-bottom: 1.5rem;
 }
 
+.app__note {
+  margin: -0.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  max-width: 46rem;
+}
+
+/*
+ * The three-level switch: strategy, condition, repeat.
+ *
+ * Levels stack rather than sit in one row, because that is the order a reader moves
+ * through them, and because the condition list depends on the strategy chosen above
+ * it -- flattening them would hide that dependency.
+ */
+.picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 2rem;
+  margin: 1.5rem 0 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+
+.picker__level {
+  min-width: 0;
+}
+
+.picker__label {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.picker__hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+}
+
+.picker__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.picker__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.picker__option:hover,
+.picker__option:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.picker__option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper));
+  font-weight: 600;
+}
+
+.picker__detail {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+/*
+ * The comparison.
+ *
+ * Numbers are tabular throughout: the columns are there to be compared down, and
+ * proportional figures make that harder than it needs to be.
+ */
+.comparison {
+  margin-top: 2.5rem;
+}
+
+.comparison h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.75rem;
+}
+
+.table__rule {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+  max-width: 46rem;
+}
+
+.table__rule--quiet {
+  color: var(--ink-soft);
+}
+
+.table__baseline-line,
+.table__selected {
+  margin: 0.6rem 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--marker-wash);
+  border-left: 3px solid var(--marker);
+  border-radius: 0 4px 4px 0;
+  font-size: 0.92rem;
+  max-width: 46rem;
+}
+
+.table {
+  width: 100%;
+  margin: 1rem 0 0;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.table caption {
+  text-align: left;
+  color: var(--ink-soft);
+  padding-bottom: 0.5rem;
+  font-size: 0.85rem;
+  max-width: 46rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+.table thead th {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.table__figures {
+  white-space: nowrap;
+}
+
+.table__anchor,
+.table__baseline {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+.table__repeats {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.table__repeat {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.table__repeat:hover,
+.table__repeat:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.table__repeat[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper));
+  font-weight: 600;
+}
+
+.table__note {
+  margin-top: 1.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.table__note h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.table__note p {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  max-width: 46rem;
+}
+
+.table--claims,
+.table--context {
+  max-width: 42rem;
+}
+
 .app--notice {
   padding: 2rem 0;
   color: var(--ink-soft);
@@ -127,6 +338,37 @@ body {
   inset: auto 0 2.25rem 0;
   height: 1px;
   background: var(--rule);
+}
+
+/*
+ * Commit boundaries.
+ *
+ * A band, not a line. The record says the previous commit ended and this one began;
+ * it does not say where in between the server cut, so a line would claim a precision
+ * the evidence does not have. The band is the whole of what is known.
+ */
+.track__boundary {
+  position: absolute;
+  bottom: 0;
+  height: 1.5rem;
+  border-left: 1px dotted var(--ink-soft);
+  border-right: 1px dotted var(--ink-soft);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--ink-soft) 22%, transparent) 4px 8px
+  );
+}
+
+/* Where each commit's own returned words sat. A thin bar under the rail: the
+ * measurement is the timestamp, and the bar shows which timestamp it was. */
+.track__commit {
+  position: absolute;
+  bottom: 1.6rem;
+  height: 0.55rem;
+  min-width: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 55%, var(--paper));
 }
 
 /* Where the marker's clip was inserted. Deliberately a thin tick on the rail rather
@@ -219,6 +461,60 @@ body {
   border-left: 3px solid var(--marker);
   border-radius: 0 4px 4px 0;
   font-variant-numeric: tabular-nums;
+}
+
+/* The commits behind the track, as figures rather than as marks on a bar. */
+.commits {
+  margin-top: 1.75rem;
+}
+
+.commits__heading {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.commits__note,
+.commits__none {
+  margin: 0.4rem 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  max-width: 46rem;
+}
+
+.commits__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.commits__table caption {
+  text-align: left;
+  color: var(--ink-soft);
+  padding-bottom: 0.5rem;
+  font-size: 0.85rem;
+  max-width: 46rem;
+}
+
+.commits__table th,
+.commits__table td {
+  text-align: left;
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.commits__table thead th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.commits__table tbody tr[data-placed="false"] {
+  /* Kept visible: a commit that carried no words is part of the record, and the
+   * count of commits is cross-checked against the condition beside it. */
+  color: var(--ink-soft);
+  font-style: italic;
 }
 
 .words {

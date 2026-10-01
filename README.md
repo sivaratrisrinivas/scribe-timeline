@@ -89,27 +89,37 @@ is deliberately explicit about overwriting them.
 
 ## The viewer
 
-`make viewer` serves a page that plays one saved run and draws what its timestamps
-claim: the audio, each returned word at the position the server gave it, and the
-marker's clip insertion point beside it. Click a word to hear it.
+`make viewer` serves a page that plays a saved run and draws what its timestamps
+claim: the audio, each returned word at the position the server gave it, the
+marker's clip insertion point beside it, and the silence each commit was cut from.
+Click a word to hear it.
 
-It shows one run, chosen with `?run=<run_id>`. Reading two conditions side by side
-is the comparison's job, and a viewer that let a reader flip between single runs
-would invite them to treat a pair of them as a measurement.
+Above that sits the comparison: every condition, its repeats, its spread, its
+median marker timestamp and its delta against the anchor, with the reported claim
+and the manual control's conclusion alongside. Three switches — commit strategy,
+condition, repeat — move between runs, and the selection lives in `?run=<run_id>`
+so any one run can be linked to. A bundle with no zero-preceding-commit anchor
+supports no comparison, and the page says so rather than showing an empty table,
+which would read as "no drift found".
 
-Three things it will not do:
+Four things it will not do:
 
-- **Subtract the marker's two positions.** The gap between the insertion point and
-  the returned timestamp is the measurement, and one run cannot produce a
-  measurement. The two figures are printed side by side instead, so the arithmetic
-  stays the reader's and stays visible.
+- **Subtract anything.** The deltas on the page are read from `comparison.json`,
+  which `scribe_timeline.analysis.compare` wrote; the page has no definition of a
+  delta and could not compute one if it tried. Within a single run the marker's two
+  positions are printed side by side and left un-subtracted, because one run is not
+  a measurement.
 - **Snap the returned word to where its clip was inserted.** The word is drawn
   where the server said it was — 12,380 ms under `vad_2`, not the 12,000 ms the
   clip was placed at. That difference is the observation.
+- **Claim a commit boundary it cannot place.** The raw events say where one
+  commit's words ended and the next one's began; they do not say where in between
+  the server cut. The track draws the whole silence, and says that is all it knows.
 - **Convert anything.** The API returned word timestamps in *seconds*; the run
-  record converts them to milliseconds once, on ingest, and the page says both
-  things. The unconverted values stay in the record's raw `events`. Every figure on
-  screen is the one in the run record, unchanged since it was written.
+  record converts them to milliseconds once, on ingest, and the commit boundaries
+  are converted once more on export, in Python. The page converts nothing, and says
+  so. The unconverted values stay in the record's raw `events`. Every figure on
+  screen is the one in the run record or the report, unchanged since it was written.
 
 A run record carries no audio — it carries the *layout* — so `make viewer-export`
 rebuilds the audio from the committed clips using the same `compose` the capture
@@ -195,8 +205,11 @@ make setup     # uv sync + npm install + export the viewer bundle
 - `fixtures/` — the committed speech clips the measurement depends on
 - `schema/run-record.schema.json` — generated from the models; do not hand-edit
 - `src/scribe_timeline/viewer/` — rebuilding a run record's audio, and refusing to
-  when the committed clips no longer match what was captured
+  when the committed clips no longer match what was captured; and reading each run's
+  commit boundaries off the audio clock, in the unit the record itself names
 - `viewer/src/runRecord.ts` — the TypeScript projection of that schema
+- `viewer/src/comparison.ts` — the exported report, parsed. The page reads the
+  deltas; it never computes them
 - `viewer/src/timeline.ts` — the record as geometry: every position on screen is
   computed here, where the sample/millisecond conversions are tested
 - `viewer/src/playback.ts` — the one place a media element's seconds meet the
@@ -207,7 +220,12 @@ make setup     # uv sync + npm install + export the viewer bundle
 `make check` fails if the committed schema drifts from the models, and a parity
 test asserts the TypeScript parser agrees with the schema on field names, types,
 optionality, and enum members for every model on both sides — including that no
-schema definition escapes the comparison.
+schema definition escapes the comparison. The comparison has no schema, so
+`tests/test_comparison_contract.py` holds the report's `to_dict` and the TypeScript
+interfaces in step against a real report instead, in both directions: a field the
+report gained and the page dropped would be a figure a reader came for and did not
+get, and a field the page expects and the report lacks would stop the page drawing
+at all.
 
 ## Design notes
 

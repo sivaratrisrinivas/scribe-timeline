@@ -22,6 +22,7 @@
  * cannot afford.
  */
 
+import type { CommitExtent } from "./runIndex.js";
 import type { RunRecord, WordTiming } from "./runRecord.js";
 
 /** The only matching rule this viewer implements, and the one the project ran. */
@@ -100,11 +101,42 @@ export interface Timeline {
   readonly sampleCount: number;
   readonly words: readonly TimelineWord[];
   readonly markers: readonly TimelineMarker[];
+  /** Where each commit this run returned fell, in the order they arrived. */
+  readonly commits: readonly TimelineCommit[];
   /** The unit the API returned timestamps in. The viewer converts nothing, so this
    *  is how a reader learns the raw values were seconds. */
   readonly sourceTimestampUnit: string;
   readonly matchRule: string;
   readonly apiKeyPresent: boolean;
+}
+
+/** One commit, placed on the audio clock.
+ *
+ *  Carries the commit's own span *and* the silence it was cut from, because those
+ *  are different claims. The span is where the server said the words were. The
+ *  silence is where it was free to cut, and the record does not narrow that any
+ *  further -- so the boundary is a gap on the track, never a line claiming a
+ *  position the evidence does not support.
+ *
+ *  A commit with no placeable word keeps its place in the sequence and carries no
+ *  position. The commit count is cross-checked against the condition in the
+ *  comparison beside it, so dropping one would put the two figures out of step.
+ */
+export interface TimelineCommit {
+  readonly commitIndex: number;
+  readonly wordCount: number;
+  readonly firstWordMs: number | null;
+  readonly lastWordMs: number | null;
+  /** 0..1 along the track, or null when the commit has no position. */
+  readonly firstFraction: number | null;
+  readonly lastFraction: number | null;
+  /** The silence this commit was cut from: the previous commit's last word to this
+   *  one's first. Null for the first commit, which was cut from the start of the
+   *  audio, and null wherever a neighbouring commit has no known position. */
+  readonly boundaryFromMs: number | null;
+  readonly boundaryToMs: number | null;
+  readonly boundaryFromFraction: number | null;
+  readonly boundaryToFraction: number | null;
 }
 
 function msPerSample(sampleRate: number): number {
@@ -156,7 +188,7 @@ function toTimelineWord(
   };
 }
 
-export function buildTimeline(record: RunRecord): Timeline {
+export function buildTimeline(record: RunRecord, commits: readonly CommitExtent[]): Timeline {
   if (record.match_rule !== IMPLEMENTED_MATCH_RULE) {
     throw new UnimplementedMatchRuleError(record.match_rule);
   }
@@ -203,10 +235,44 @@ export function buildTimeline(record: RunRecord): Timeline {
     sampleCount: record.manifest.sample_count,
     words,
     markers,
+    commits: placeCommits(commits, durationMs),
     sourceTimestampUnit: record.source_timestamp_unit,
     matchRule: record.match_rule,
     apiKeyPresent: record.api_key_present,
   };
+}
+
+/** Place each commit on the track, and each boundary in the silence before it.
+ *
+ *  A missing position stays missing. `0` is a legitimate-looking place on an
+ *  eighteen-second track, and a boundary drawn there would read as an observation
+ *  the server never made.
+ */
+function placeCommits(
+  commits: readonly CommitExtent[],
+  durationMs: number,
+): TimelineCommit[] {
+  const fraction = (ms: number): number => clampFraction(ms / durationMs);
+  return commits.map((commit, index) => {
+    const previous = index === 0 ? null : (commits[index - 1] ?? null);
+    // A boundary needs both ends. Either neighbouring commit sitting at an unknown
+    // position leaves the gap unstated, rather than guessing which side it fell on.
+    const boundaryFromMs = previous?.lastWordMs ?? null;
+    const boundaryToMs = commit.firstWordMs;
+    const hasBoundary = boundaryFromMs !== null && boundaryToMs !== null;
+    return {
+      commitIndex: commit.commitIndex,
+      wordCount: commit.wordCount,
+      firstWordMs: commit.firstWordMs,
+      lastWordMs: commit.lastWordMs,
+      firstFraction: commit.firstWordMs === null ? null : fraction(commit.firstWordMs),
+      lastFraction: commit.lastWordMs === null ? null : fraction(commit.lastWordMs),
+      boundaryFromMs: hasBoundary ? boundaryFromMs : null,
+      boundaryToMs: hasBoundary ? boundaryToMs : null,
+      boundaryFromFraction: hasBoundary ? fraction(boundaryFromMs) : null,
+      boundaryToFraction: hasBoundary ? fraction(boundaryToMs) : null,
+    };
+  });
 }
 
 /** The word sounding at `timeMs`, or null in the silence between words.

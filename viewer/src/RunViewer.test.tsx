@@ -4,13 +4,18 @@ import userEvent from "@testing-library/user-event";
 
 import { RunViewer } from "./RunViewer.js";
 import { buildTimeline } from "./timeline.js";
+import { parseCommitExtents } from "./runIndex.js";
 import { parseRunRecord } from "./runRecord.js";
 import { FakePlayback } from "./testing/fakePlayback.js";
-import { MARKER_RETURNED_MS, syntheticRecordJson } from "./testing/syntheticRecord.js";
+import {
+  MARKER_RETURNED_MS,
+  syntheticCommitsJson,
+  syntheticRecordJson,
+} from "./testing/syntheticRecord.js";
 
 function setup(options: Parameters<typeof syntheticRecordJson>[0] = {}) {
   const record = parseRunRecord(syntheticRecordJson(options));
-  const timeline = buildTimeline(record);
+  const timeline = buildTimeline(record, parseCommitExtents(syntheticCommitsJson(options)));
   const playback = new FakePlayback();
   render(<RunViewer timeline={timeline} playback={playback} />);
   return { playback, timeline };
@@ -208,7 +213,10 @@ describe("the playhead follows the audio", () => {
     // plausible place on a track that has none.
     render(
       <RunViewer
-        timeline={buildTimeline(parseRunRecord(syntheticRecordJson()))}
+        timeline={buildTimeline(
+          parseRunRecord(syntheticRecordJson()),
+          parseCommitExtents(syntheticCommitsJson()),
+        )}
         playback={new FakePlayback(null)}
       />,
     );
@@ -251,7 +259,7 @@ describe("a word the audio does not contain is still shown", () => {
     ];
     render(
       <RunViewer
-        timeline={buildTimeline({ ...record, words })}
+        timeline={buildTimeline({ ...record, words }, [])}
         playback={new FakePlayback()}
       />,
     );
@@ -263,3 +271,156 @@ describe("a word the audio does not contain is still shown", () => {
     expect(stray).toHaveAttribute("data-within-audio", "false");
   });
 });
+
+// --- Commit boundaries ---------------------------------------------------------
+
+describe("where the server cut", () => {
+  it("marks every commit this run returned", () => {
+    // Two preceding segments and the marker: three commits, so any reader can see
+    // that the drift is being read against a specific number of them.
+    setup();
+
+    expect(screen.getAllByTestId("commit-span")).toHaveLength(3);
+  });
+
+  it("draws a commit where its own words were returned, not where the clip was inserted", () => {
+    // The measured commit starts at 12380 ms. Drawing it at the 12000 ms insertion
+    // point would hide the very figure the run exists to show.
+    const { timeline } = setup();
+
+    const measured = screen
+      .getAllByTestId("commit-span")
+      .find((node) => node.dataset["commitIndex"] === "3")!;
+
+    expect(measured.style.left).toBe(`${timeline.commits[2]!.firstFraction! * 100}%`);
+  });
+
+  it("marks the silence the cut fell in, rather than a line pretending to know where", () => {
+    // The record does not say where in the silence the server committed -- only that
+    // the previous commit ended there and this one began here. Drawing a boundary at
+    // a chosen point inside the gap would be a claim nobody can check.
+    setup();
+
+    const boundaries = screen.getAllByTestId("commit-boundary");
+    expect(boundaries).toHaveLength(2);
+    // Commit 2 was cut from the 5.6 s of silence after commit 1; commit 3 from the
+    // silence between 6640 ms and the marker at 12380 ms.
+    expect(boundaries[0]).toHaveAttribute("title", expect.stringContaining("640 ms and 6220 ms"));
+    expect(boundaries[1]).toHaveAttribute(
+      "title",
+      expect.stringContaining("6640 ms and 12380 ms"),
+    );
+    expect(boundaries[0]).toHaveAttribute("title", expect.stringContaining("does not say where"));
+  });
+
+  it("draws no boundary before the first commit, which was cut from the start", () => {
+    // Two boundaries for three commits. A third would claim a cut before any audio.
+    setup();
+
+    expect(screen.getAllByTestId("commit-boundary")).toHaveLength(2);
+    expect(screen.getAllByTestId("commit-span")).toHaveLength(3);
+  });
+
+  it("says who chose the cut points under VAD", () => {
+    // The server's own segmentation is the variable under test, so a reader must
+    // not think the runner picked these.
+    setup({ conditionId: "vad_2", commitStrategy: "vad" });
+
+    expect(screen.getByText(/voice activity detection chose/i)).toBeInTheDocument();
+  });
+
+  it("says who chose the cut points under manual commits", () => {
+    // The control's cut points were requested at known samples. Saying "the server
+    // chose these" here would misdescribe the one run whose boundaries are known.
+    setup({ conditionId: "manual_2", commitStrategy: "manual" });
+
+    expect(screen.getByText(/runner requested/i)).toBeInTheDocument();
+  });
+
+  it("says the record does not narrow the cut any further", () => {
+    // Without this, a band on the track reads as a boundary the server reported.
+    setup();
+
+    expect(screen.getByText(/does not say where within it/i)).toBeInTheDocument();
+  });
+});
+
+describe("the commits behind the track, as figures", () => {
+  it("lists each commit's first and last returned word", () => {
+    setup();
+
+    const row = screen.getByRole("row", { name: /^1 .*220/ });
+    expect(row).toHaveTextContent("220");
+    expect(row).toHaveTextContent("640");
+  });
+
+  it("lists the measured commit at the timestamp the server returned", () => {
+    setup();
+
+    expect(
+      screen.getByRole("row", { name: new RegExp(`^3 .*${MARKER_RETURNED_MS}`) }),
+    ).toBeInTheDocument();
+  });
+
+  it("says a commit returned no words rather than drawing it at zero", () => {
+    // Zero is a position. A commit the server returned empty has none, and saying
+    // "0 ms" would put a boundary at the very start of the audio.
+    const record = parseRunRecord(syntheticRecordJson());
+    const real = syntheticCommitsJson();
+    render(
+      <RunViewer
+        timeline={buildTimeline(
+          record,
+          parseCommitExtents([
+            real[0]!,
+            { commit_index: 2, word_count: 0, first_word_ms: null, last_word_ms: null },
+            real[2]!,
+          ]),
+        )}
+        playback={new FakePlayback()}
+      />,
+    );
+
+    const empty = screen.getByRole("row", { name: /^2 / });
+    expect(empty).toHaveTextContent(/no word/);
+    expect(empty).not.toHaveTextContent(/\b0 ms/);
+  });
+
+  it("keeps an empty commit in the sequence, so the count stays right", () => {
+    const record = parseRunRecord(syntheticRecordJson());
+    const real = syntheticCommitsJson();
+    render(
+      <RunViewer
+        timeline={buildTimeline(
+          record,
+          parseCommitExtents([
+            real[0]!,
+            { commit_index: 2, word_count: 0, first_word_ms: null, last_word_ms: null },
+            real[2]!,
+          ]),
+        )}
+        playback={new FakePlayback()}
+      />,
+    );
+
+    expect(screen.getAllByRole("row", { name: /^\d / })).toHaveLength(3);
+  });
+});
+
+describe("a run that returned no commits at all", () => {
+  it("says so, rather than drawing a track with nothing on it", () => {
+    // An empty commit list is an observation about the run. A track with no
+    // boundaries and no explanation looks like a viewer that lost the data.
+    const { timeline } = timelineWithNoCommits();
+
+    expect(screen.getByText(/returned no timestamped commit/i)).toBeInTheDocument();
+    expect(screen.queryAllByTestId("commit-boundary")).toHaveLength(0);
+    expect(timeline.commits).toEqual([]);
+  });
+});
+
+function timelineWithNoCommits() {
+  const timeline = buildTimeline(parseRunRecord(syntheticRecordJson()), []);
+  render(<RunViewer timeline={timeline} playback={new FakePlayback()} />);
+  return { timeline };
+}

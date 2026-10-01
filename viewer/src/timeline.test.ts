@@ -6,17 +6,25 @@ import {
   MarkerTextAbsentError,
   UnimplementedMatchRuleError,
 } from "./timeline.js";
+import { parseCommitExtents } from "./runIndex.js";
 import { parseRunRecord } from "./runRecord.js";
 import {
   MARKER_RETURNED_MS,
   MARKER_TEXT,
   SAMPLE_COUNT,
   SAMPLE_RATE,
+  syntheticCommitsJson,
   syntheticRecordJson,
 } from "./testing/syntheticRecord.js";
 
-function timeline(options: Parameters<typeof syntheticRecordJson>[0] = {}) {
-  return buildTimeline(parseRunRecord(syntheticRecordJson(options)));
+function timeline(
+  options: Parameters<typeof syntheticRecordJson>[0] = {},
+  commits: Parameters<typeof syntheticCommitsJson>[0] | null = null,
+) {
+  return buildTimeline(
+    parseRunRecord(syntheticRecordJson(options)),
+    parseCommitExtents(syntheticCommitsJson(commits ?? options)),
+  );
 }
 
 describe("the timeline's own geometry", () => {
@@ -76,7 +84,7 @@ describe("the match rule is the one the project actually ran", () => {
       word.text === "Zorblax." ? { ...word, text: "Zorblaxx" } : word,
     );
 
-    expect(() => buildTimeline({ ...record, words })).toThrow(MarkerTextAbsentError);
+    expect(() => buildTimeline({ ...record, words }, [])).toThrow(MarkerTextAbsentError);
   });
 
   it("keeps a second occurrence of the marker word rather than dropping it", () => {
@@ -89,7 +97,7 @@ describe("the match rule is the one the project actually ran", () => {
       { text: "Zorblax.", start_ms: 15_000, end_ms: 15_600, logprob: -0.9 },
     ];
 
-    const model = buildTimeline({ ...record, words });
+    const model = buildTimeline({ ...record, words }, []);
 
     expect(model.words.filter((word) => word.text === "Zorblax.")).toHaveLength(2);
     // The marker claims the first occurrence; the second is shown as an ordinary word.
@@ -122,7 +130,7 @@ describe("word positions on the track", () => {
       { text: "Orbique", start_ms: 19_000, end_ms: 19_400, logprob: -0.3 },
     ];
 
-    const stray = buildTimeline({ ...record, words }).words.find((w) => w.text === "Orbique")!;
+    const stray = buildTimeline({ ...record, words }, []).words.find((w) => w.text === "Orbique")!;
 
     expect(stray.withinAudio).toBe(false);
     expect(stray.startFraction).toBeLessThanOrEqual(1);
@@ -213,3 +221,110 @@ describe("the record's identity reaches the model", () => {
     expect(timeline().markers[0]!.text).toBe(MARKER_TEXT);
   });
 });
+
+// --- Commit boundaries ---------------------------------------------------------
+
+describe("where each commit fell", () => {
+  it("places every commit the run returned, in order", () => {
+    // Two preceding segments plus the commit carrying the marker, which is the
+    // shape a real vad_2 run has.
+    const model = timeline();
+
+    expect(model.commits.map((commit) => commit.commitIndex)).toEqual([1, 2, 3]);
+    expect(model.commits[2]!.firstWordMs).toBe(MARKER_RETURNED_MS);
+  });
+
+  it("places a commit at the fraction of the audio its words occupy", () => {
+    // 12380 ms of an 18000 ms track. The commit bar and the word marker inside it
+    // have to be drawn from the same fraction or they will not line up.
+    const commit = timeline().commits[2]!;
+
+    expect(commit.firstFraction).toBeCloseTo(12_380 / 18_000, 10);
+    expect(commit.lastFraction).toBeCloseTo(12_980 / 18_000, 10);
+  });
+
+  it("counts the words the commit carried", () => {
+    // The count is what the condition's observed commit count is cross-checked
+    // against, so it is shown rather than inferred.
+    expect(timeline().commits.every((commit) => commit.wordCount === 1)).toBe(true);
+  });
+
+  it("reports no commits at all for a run that returned none", () => {
+    // An empty list is an observation. One fabricated commit at zero would be a
+    // different one entirely.
+    const model = timeline({}, { priorStarts: [], markerStartMs: null });
+
+    expect(model.commits).toEqual([]);
+  });
+});
+
+describe("the silence a commit was cut from", () => {
+  it("is the gap between the previous commit's last word and this one's first", () => {
+    // The server cut somewhere in here. The record does not say where, and this
+    // gap is the whole of what can honestly be claimed about it.
+    const commits = timeline().commits;
+
+    expect(commits[1]!.boundaryFromMs).toBe(commits[0]!.lastWordMs);
+    expect(commits[1]!.boundaryToMs).toBe(commits[1]!.firstWordMs);
+  });
+
+  it("spans the silence, not the commit, so a commit is not read as a boundary", () => {
+    // The second commit's first word is at 6220 ms and the first commit's last word
+    // ended at 640 ms: over five seconds of silence, which is where VAD was free to
+    // cut and where the boundary is drawn.
+    const gap = timeline().commits[1]!;
+
+    expect(gap.boundaryFromMs).toBe(640);
+    expect(gap.boundaryToMs).toBe(6_220);
+  });
+
+  it("has no boundary for the first commit, which was cut from the start", () => {
+    expect(timeline().commits[0]!.boundaryFromMs).toBeNull();
+    expect(timeline().commits[0]!.boundaryToMs).toBeNull();
+  });
+
+  it("is absent where a neighbouring commit has no known position", () => {
+    // A commit the server returned with no placeable word has no position, so the
+    // silence around it cannot be stated. Zero would draw a boundary at the very
+    // start of the audio and read as an observation.
+    const commits = withUnplaceableCommit().commits;
+
+    expect(commits[0]!.boundaryToMs).toBeNull();
+    expect(commits[1]!.boundaryFromMs).toBeNull();
+  });
+});
+
+describe("a commit the viewer cannot place is still listed", () => {
+  it("carries no position for it, which is not the same as a position of zero", () => {
+    const empty = withUnplaceableCommit().commits[1]!;
+
+    expect(empty.wordCount).toBe(0);
+    expect(empty.firstWordMs).toBeNull();
+    expect(empty.firstFraction).toBeNull();
+    expect(empty.lastFraction).toBeNull();
+  });
+
+  it("is not dropped, so the commit count stays right", () => {
+    // The commit count is cross-checked against the condition in the comparison
+    // beside it. Dropping an empty commit would put the two figures out of step.
+    expect(withUnplaceableCommit().commits).toHaveLength(3);
+  });
+});
+
+/** The default synthetic run, with its middle commit returned carrying no words.
+ *
+ *  Modelled through the parser rather than spread from a placed commit: a spread
+ *  would leave the already-computed fractions in place, which is exactly the
+ *  substitution this project exists to refuse.
+ */
+function withUnplaceableCommit() {
+  const real = syntheticCommitsJson();
+  return buildTimeline(
+    parseRunRecord(syntheticRecordJson()),
+    parseCommitExtents([
+      real[0]!,
+      { commit_index: 2, word_count: 0, first_word_ms: null, last_word_ms: null },
+      real[2]!,
+    ]),
+  );
+}
