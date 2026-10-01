@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+
+# Credentials: never commit these
+.env
+.env.*
+!.env.example
+
+# Real captured runs. Published run records are added deliberately, by hand,
+# after checking they contain no credential. See docs/agents/ and the README's
+# Reproduce section.
+runs/
+*.wav
+!fixtures/*.wav

@@ -1,0 +1,323 @@
+{
+  "$defs": {
+    "EchoedSessionConfig": {
+      "additionalProperties": false,
+      "description": "The session configuration the server echoed back.\n\nRecorded rather than the values that were sent: the original report found the\nserver echoing VAD durations that did not account for the observed offset, so\nsent and echoed values are not assumed to agree.",
+      "properties": {
+        "commit_strategy": {
+          "enum": [
+            "vad",
+            "manual"
+          ],
+          "title": "Commit Strategy",
+          "type": "string"
+        },
+        "include_timestamps": {
+          "title": "Include Timestamps",
+          "type": "boolean"
+        },
+        "language_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language Code"
+        },
+        "min_silence_duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Silence Duration Ms"
+        },
+        "min_speech_duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Speech Duration Ms"
+        },
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "sample_rate": {
+          "exclusiveMinimum": 0,
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "vad_silence_threshold_secs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vad Silence Threshold Secs"
+        },
+        "vad_threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vad Threshold"
+        }
+      },
+      "required": [
+        "model_id",
+        "sample_rate",
+        "include_timestamps",
+        "commit_strategy"
+      ],
+      "title": "EchoedSessionConfig",
+      "type": "object"
+    },
+    "Manifest": {
+      "additionalProperties": false,
+      "description": "What was played: sample rate, layout, and realised marker positions.",
+      "properties": {
+        "condition_id": {
+          "title": "Condition Id",
+          "type": "string"
+        },
+        "markers": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "minProperties": 1,
+          "title": "Markers",
+          "type": "object"
+        },
+        "sample_count": {
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "sample_rate": {
+          "exclusiveMinimum": 0,
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "segments": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Segment"
+          },
+          "title": "Segments",
+          "type": "array"
+        }
+      },
+      "required": [
+        "condition_id",
+        "sample_rate",
+        "sample_count",
+        "markers"
+      ],
+      "title": "Manifest",
+      "type": "object"
+    },
+    "RawEvent": {
+      "additionalProperties": false,
+      "description": "One event exactly as received, kept unedited.\n\nThe payload is walked for credential-shaped keys and the event is rejected if\nany are found. Failing loudly is deliberate: a redacted payload would be\nsilently incomplete evidence, and a published run record must be trustworthy\nenough to reason from.",
+      "properties": {
+        "clock_origin": {
+          "const": "monotonic_since_connect",
+          "default": "monotonic_since_connect",
+          "title": "Clock Origin",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "received_at_ms": {
+          "minimum": 0,
+          "title": "Received At Ms",
+          "type": "number"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "received_at_ms"
+      ],
+      "title": "RawEvent",
+      "type": "object"
+    },
+    "Segment": {
+      "additionalProperties": false,
+      "description": "A clip placed in the composed timeline.",
+      "properties": {
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "marker_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Marker Text"
+        },
+        "sample_count": {
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "start_sample": {
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "clip_id",
+        "start_sample",
+        "sample_count"
+      ],
+      "title": "Segment",
+      "type": "object"
+    },
+    "WordTiming": {
+      "additionalProperties": false,
+      "description": "One returned word and the interval the server assigned it.",
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "end_ms": {
+          "minimum": 0,
+          "title": "End Ms",
+          "type": "number"
+        },
+        "start_ms": {
+          "minimum": 0,
+          "title": "Start Ms",
+          "type": "number"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "start_ms",
+        "end_ms"
+      ],
+      "title": "WordTiming",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One condition, one repeat, one strategy: everything needed to re-derive\nthe result without re-running it.",
+  "properties": {
+    "api_key_present": {
+      "default": false,
+      "title": "Api Key Present",
+      "type": "boolean"
+    },
+    "commit_strategy": {
+      "enum": [
+        "vad",
+        "manual"
+      ],
+      "title": "Commit Strategy",
+      "type": "string"
+    },
+    "condition_id": {
+      "title": "Condition Id",
+      "type": "string"
+    },
+    "echoed_config": {
+      "$ref": "#/$defs/EchoedSessionConfig"
+    },
+    "events": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RawEvent"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "manifest": {
+      "$ref": "#/$defs/Manifest"
+    },
+    "repeat_index": {
+      "minimum": 0,
+      "title": "Repeat Index",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "words": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/WordTiming"
+      },
+      "title": "Words",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "condition_id",
+    "commit_strategy",
+    "repeat_index",
+    "manifest",
+    "echoed_config"
+  ],
+  "title": "RunRecord",
+  "type": "object"
+}
