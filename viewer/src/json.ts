@@ -77,8 +77,8 @@ export function requireExactKeys(
   if (unknown.length > 0) {
     throw new InvalidJsonFieldError(
       `${path} has field(s) this viewer does not know: ${unknown.join(", ")}. ` +
-        `They are ignored here, so a figure the report contains would be missing from ` +
-        `the page; the viewer is older than the report it was handed.`,
+        `They cannot be read, so a figure the document contains would be missing from ` +
+        `the page; the viewer is older than the document it was handed.`,
     );
   }
   const missing = expected.filter((key) => !Object.hasOwn(object, key));
@@ -87,6 +87,24 @@ export function requireExactKeys(
       `${path} is missing field(s): ${missing.join(", ")}. A figure that is not there is not zero.`,
     );
   }
+}
+
+/** The two commit strategies this project runs, as one named check.
+ *
+ *  Both bundle documents carry it, and a run of unknown strategy is
+ *  indistinguishable from the manual control -- which is the one comparison the
+ *  whole conclusion rests on. One check, so the two parsers cannot come to differ
+ *  about which values are admissible.
+ */
+export function requireCommitStrategy(value: unknown, path: string): "vad" | "manual" {
+  const strategy = requireString(value, path);
+  if (strategy !== "vad" && strategy !== "manual") {
+    throw new InvalidJsonFieldError(
+      `${path} must be "vad" or "manual", got ${JSON.stringify(strategy)}. A run of unknown ` +
+        `strategy cannot be told apart from the manual control.`,
+    );
+  }
+  return strategy;
 }
 
 export function optionalString(value: unknown, path: string): string | null {

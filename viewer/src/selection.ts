@@ -19,7 +19,8 @@
  *   number that is not there.
  */
 
-import type { CommitStrategy, RunIndexEntry } from "./runIndex.js";
+import type { RunIndexEntry } from "./runIndex.js";
+import type { CommitStrategy } from "./runRecord.js";
 
 export interface Selection {
   readonly conditionId: string;

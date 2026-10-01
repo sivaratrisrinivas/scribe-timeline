@@ -25,9 +25,11 @@
  */
 
 import {
+  InvalidJsonFieldError,
   nullableNumber,
   requireArray,
   requireBoolean,
+  requireCommitStrategy,
   requireExactKeys,
   requireField,
   requireNonNegativeInteger,
@@ -36,8 +38,6 @@ import {
   requireString,
 } from "./json.js";
 import type { CommitStrategy } from "./runRecord.js";
-
-export type { CommitStrategy };
 
 export class InvalidRunIndexError extends Error {
   public constructor(message: string) {
@@ -50,12 +50,19 @@ function fail(message: string): never {
   throw new InvalidRunIndexError(message);
 }
 
+/** An object carrying exactly `expected`'s fields, or a refusal naming the path.
+ *
+ *  The key check itself lives in `json.ts` with the rest of the field guards, so this
+ *  and the comparison parser cannot drift on what "a field I do not know" means. It
+ *  is re-thrown as an index error so a caller can catch one type per document.
+ */
 function exactFields(value: unknown, expected: readonly string[], path: string): Record<string, unknown> {
   const object = requireObject(value, path);
   try {
     requireExactKeys(object, expected, path);
   } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+    if (error instanceof InvalidJsonFieldError) throw new InvalidRunIndexError(error.message);
+    throw error;
   }
   return object;
 }
@@ -122,18 +129,10 @@ export function parseCommitExtents(value: unknown, path = "commits"): CommitExte
 
 function parseEntry(value: unknown, path: string): RunIndexEntry {
   const raw = exactFields(value, ENTRY_FIELDS, path);
-  const commitStrategy = requireString(raw["commit_strategy"], `${path}.commit_strategy`);
-  if (commitStrategy !== "vad" && commitStrategy !== "manual") {
-    fail(
-      `${path}.commit_strategy must be "vad" or "manual", got ${JSON.stringify(commitStrategy)}. ` +
-        `A run of unknown strategy cannot be told apart from the manual control, which is the ` +
-        `one thing this experiment's conclusion rests on.`,
-    );
-  }
   return {
     runId: requireString(raw["run_id"], `${path}.run_id`),
     conditionId: requireString(raw["condition_id"], `${path}.condition_id`),
-    commitStrategy,
+    commitStrategy: requireCommitStrategy(raw["commit_strategy"], `${path}.commit_strategy`),
     repeatIndex: requireNonNegativeInteger(raw["repeat_index"], `${path}.repeat_index`),
     audioPath: requireString(raw["audio_path"], `${path}.audio_path`),
     hasAudio: requireBoolean(raw["has_audio"], `${path}.has_audio`),

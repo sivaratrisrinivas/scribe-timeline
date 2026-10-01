@@ -27,9 +27,11 @@
  */
 
 import {
+  InvalidJsonFieldError,
   nullableNumber,
   requireArray,
   requireBoolean,
+  requireCommitStrategy,
   requireExactKeys,
   requireField,
   requireNumber,
@@ -51,12 +53,19 @@ function fail(message: string): never {
   throw new InvalidComparisonError(message);
 }
 
+/** An object carrying exactly `expected`'s fields, or a refusal naming the path.
+ *
+ *  The key check itself lives in `json.ts` with the rest of the field guards, so the
+ *  index parser and this one cannot drift on what "a field I do not know" means. It
+ *  is re-thrown as a comparison error so a caller can catch one type per document.
+ */
 function exactFields(value: unknown, expected: readonly string[], path: string): Record<string, unknown> {
   const object = requireObject(value, path);
   try {
     requireExactKeys(object, expected, path);
   } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+    if (error instanceof InvalidJsonFieldError) throw new InvalidComparisonError(error.message);
+    throw error;
   }
   return object;
 }
@@ -233,9 +242,9 @@ function parseCondition(value: unknown, path: string): ConditionSummary {
   }
   if (!isAnchor && deltaVsAnchorMs === null) {
     fail(
-      `${path}.delta_vs_anchor_ms is missing on a condition that is not the anchor. Every ` +
-        `non-anchor condition is measured against ${String(raw["condition_id"])}'s median, and ` +
-        `reporting nothing would read as no drift.`,
+      `${path}.delta_vs_anchor_ms is missing on ${JSON.stringify(String(raw["condition_id"]))}, ` +
+        `which is not the anchor. Every non-anchor condition is measured against the anchor's ` +
+        `median, and reporting nothing here would read as no drift.`,
     );
   }
 
@@ -251,17 +260,9 @@ function parseCondition(value: unknown, path: string): ConditionSummary {
     );
   }
 
-  const commitStrategy = requireString(raw["commit_strategy"], `${path}.commit_strategy`);
-  if (commitStrategy !== "vad" && commitStrategy !== "manual") {
-    fail(
-      `${path}.commit_strategy must be "vad" or "manual", got ${JSON.stringify(commitStrategy)}. ` +
-        `A run of unknown strategy cannot be told apart from the manual control.`,
-    );
-  }
-
   return {
     conditionId: requireString(raw["condition_id"], `${path}.condition_id`),
-    commitStrategy,
+    commitStrategy: requireCommitStrategy(raw["commit_strategy"], `${path}.commit_strategy`),
     priorSegmentCount: requireNumber(raw["prior_segment_count"], `${path}.prior_segment_count`),
     observedCommitCount: parseNumberArray(
       raw["observed_commit_count"],
@@ -350,11 +351,30 @@ function parseReport(value: unknown, path: string): ComparisonReport {
   );
   const anchorConditionId = requireString(raw["anchor_condition_id"], `${path}.anchor_condition_id`);
 
-  if (!conditions.some((condition) => condition.isAnchor)) {
+  // Both names have to agree. `anchor_condition_id` is what the report calls the
+  // baseline and `is_anchor` is what each condition claims about itself; if they
+  // disagree, one of the two is wrong and every delta in the table is measured
+  // against something the report does not agree is the baseline.
+  const flagged = conditions.filter((condition) => condition.isAnchor);
+  if (flagged.length === 0) {
     fail(
       `${path}.anchor_condition_id names ${JSON.stringify(anchorConditionId)}, but no condition ` +
         `in this bundle is marked is_anchor. Every delta is measured against that baseline, so ` +
         `without it none of them can be checked.`,
+    );
+  }
+  if (flagged.length > 1) {
+    fail(
+      `${path} marks ${flagged.map((c) => c.conditionId).join(", ")} as the anchor, and names ` +
+        `${JSON.stringify(anchorConditionId)} as its anchor_condition_id. Which one is the ` +
+        `baseline decides every delta, so this report cannot be read.`,
+    );
+  }
+  if (flagged[0]!.conditionId !== anchorConditionId) {
+    fail(
+      `${path}.anchor_condition_id names ${JSON.stringify(anchorConditionId)}, but the condition ` +
+        `marked is_anchor is ${JSON.stringify(flagged[0]!.conditionId)}. Every delta in this ` +
+        `report is measured against one of them, and they cannot both be right.`,
     );
   }
 

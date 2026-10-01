@@ -167,26 +167,25 @@ describe("the synthetic commits describe the real ones", () => {
     return parseRunRecord(JSON.parse(readFileSync(join(evidenceDir, `${id}.json`), "utf8")));
   }
 
-  it("places the measured marker where the published run did", () => {
-    // The one figure the whole project rests on. The earlier commits carry no
-    // measurement, so their exact word timings are a fixture detail rather than
-    // something to copy; the marker's is the observation.
-    expect(syntheticCommitsJson()[2]!.first_word_ms).toBe(
-      publishedCommits(vad2Record())[2]!.first_word_ms,
-    );
+  it("places every commit where the published run placed it", () => {
+    // The commit boundaries on the track are drawn at these positions, so a fixture
+    // even slightly off would put every band somewhere the real run has no silence.
+    // The whole list, not just the measured commit: the earlier two are what the
+    // boundary bands are made of.
+    expect(syntheticCommitsJson()).toEqual(publishedCommits(vad2Record()));
+  });
+
+  it("places the measured marker where the measurement put it", () => {
+    // The one figure the whole project rests on, asserted separately so a failure
+    // says which of the two things moved.
     expect(syntheticCommitsJson()[2]!.first_word_ms).toBe(MARKER_RETURNED_MS);
+    expect(publishedCommits(vad2Record())[2]!.first_word_ms).toBe(MARKER_RETURNED_MS);
   });
 
   it("has as many commits as the published run returned", () => {
     // If the count drifts, every test above it is describing a timeline the real
     // evidence does not have.
     expect(syntheticCommitsJson()).toHaveLength(publishedCommits(vad2Record()).length);
-  });
-
-  it("numbers its commits the way the published run numbers them", () => {
-    expect(syntheticCommitsJson().map((c) => c.commit_index)).toEqual(
-      publishedCommits(vad2Record()).map((c) => c.commit_index),
-    );
   });
 
   it("agrees with the anchor's single commit, where there is no preceding speech", () => {

@@ -466,7 +466,44 @@ def test_the_unavailable_reason_is_reported_rather_than_only_recorded(
     assert "no comparison" in capsys.readouterr().err
 
 
+def test_a_run_that_lost_its_marker_withholds_the_whole_comparison(
+    public: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The opposite of the audio rule, and deliberately so.
+
+    A run whose marker never came back has no figure for its condition's column.
+    Dropping it would leave a table of the remaining conditions looking exactly like
+    the matrix -- the other runs' deltas presented as this experiment's finding. So
+    the bundle refuses to publish a comparison at all, and names what stopped it.
+    """
+    monkeypatch.setattr(
+        export_viewer,
+        "load_clips",
+        lambda: {"marker": clip("marker", 1600), "earlier": clip("earlier", 1600)},
+    )
+    good = make_record(
+        "run-anchor",
+        condition_id="vad_0",
+        commits=(commit((MARKER + ".", 0.82, 0.98)),),
+    )
+    lost = make_record(
+        "run-drift",
+        condition_id="vad_1",
+        prior_segments=1,
+        # The run came back with words -- just not the marker.
+        commits=(commit(("Kolvig.", 0.22, 0.64)),),
+    )
+    paths = [write_record(tmp_path, good), write_record(tmp_path, lost)]
+
+    export_viewer.export(paths, public_dir=public)
+
+    exported = json.loads((public / "comparison.json").read_text())
+    assert "report" not in exported
+    assert MARKER in exported["unavailable_reason"]
+
+
 def test_an_unreadable_record_names_the_file(tmp_path: Path) -> None:
+
     bad = tmp_path / "not-a-record.json"
     bad.write_text("{ not json")
 

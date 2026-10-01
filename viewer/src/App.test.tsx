@@ -372,13 +372,31 @@ describe("anything that goes wrong is visible", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/not valid/i);
   });
 
-  it("reports a malformed comparison rather than showing a table of guesses", async () => {
-    // The report is the only source of every delta on the page. A malformed one must
-    // be refused, not half-read.
+  it("withholds a malformed comparison's figures without taking the run down with them", async () => {
+    // The report is the only source of every delta, so it must be refused rather than
+    // half-read. But the run record is the only source of the audio, the returned
+    // words and the commit boundaries, and a summary failing to parse is no reason to
+    // throw away the evidence beside it.
     stubBundle({ comparison: { report: { conditions: [{ condition_id: "vad_0" }] } } });
     render(<App />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/comparison is not valid/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be read/i);
+    expect(screen.getByRole("heading", { name: /vad_0/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Run audio")).toHaveAttribute(
+      "src",
+      `audio/${BUNDLE.vad_0[0]}.wav`,
+    );
+    expect(screen.queryByTestId("conditions-table")).not.toBeInTheDocument();
+  });
+
+  it("still marks the commit boundaries when the report cannot be read", async () => {
+    // The boundaries come from the run's own record and index, never from the report,
+    // so the one thing a reader came to see survives the report's failure.
+    stubBundle({ comparison: { report: { nonsense: true } } });
+    render(<App />);
+
+    await screen.findByRole("heading", { name: /vad_0/ });
+    expect(screen.getAllByTestId("commit-span").length).toBeGreaterThan(0);
   });
 
   it("reports a malformed index rather than guessing which runs exist", async () => {
@@ -432,6 +450,27 @@ describe("a bundle that cannot support a comparison", () => {
     await screen.findByRole("heading", { name: "vad_2 (vad)" });
 
     expect(screen.queryByTestId("selected-run")).not.toBeInTheDocument();
+  });
+
+  it("locates the measured word under the recorded match rule, not a looser one", async () => {
+    // A second, laxer rule would decide for itself which word was measured. It would
+    // also fail silently: a marker the server returned as `Zorblax,` would stop
+    // matching, the figure would vanish, and nothing would say why.
+    stubBundle({
+      record: {
+        ...(recordJson(BUNDLE.vad_2[0]) as Record<string, unknown>),
+        words: [
+          { text: "Kolvig.", start_ms: 220, end_ms: 640, logprob: -0.8 },
+          { text: "Zorblax,", start_ms: 12_380, end_ms: 12_980, logprob: -0.85 },
+        ],
+      },
+    });
+    setRunQuery(BUNDLE.vad_2[0]);
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "vad_2 (vad)" });
+
+    expect(screen.getByTestId("selected-run")).toHaveTextContent("12,380 ms");
   });
 });
 

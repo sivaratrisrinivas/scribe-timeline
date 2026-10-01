@@ -139,7 +139,8 @@ function Report({
         {report.matchRuleNote}
       </p>
       <p className="table__rule table__rule--quiet">
-        Every figure below is read from the exported report; no arithmetic is done in this page.
+        Every delta below is read from the exported report, which is the only place they are
+        computed. This page subtracts nothing.
       </p>
 
       {anchor === undefined ? null : (

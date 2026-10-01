@@ -16,7 +16,8 @@
 
 import type { ReactNode } from "react";
 
-import type { CommitStrategy, RunIndexEntry } from "./runIndex.js";
+import type { RunIndexEntry } from "./runIndex.js";
+import type { CommitStrategy } from "./runRecord.js";
 import {
   selectCondition,
   selectStrategy,

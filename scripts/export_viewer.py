@@ -124,9 +124,20 @@ def comparison_document(records: Sequence[RunRecord]) -> dict[str, object]:
     rather than a missing file, so a reader is told the bundle holds no comparison
     instead of being shown an empty table that reads as "no drift found".
 
-    A record whose marker never came back is treated the same way as a set with no
-    anchor: one unusable record must not cost the reader the other eleven, which is
-    the rule the audio rebuild already follows.
+    **A record that cannot support a measurement withholds the whole comparison**,
+    which is the opposite of the audio rule above, and deliberately so. A run whose
+    marker never came back has no figure to put in its condition's column, and
+    dropping it would leave a table of the *remaining* conditions looking exactly
+    like the matrix. The deltas are the finding; a comparison over a subset of the
+    runs is a different measurement, and publishing it as this one would be the
+    worse mistake. So the bundle says it holds no comparison, and names the record
+    that stopped it.
+
+    `compare_runs` signals every way of being unable to measure by raising: a
+    record missing its marker raises `MarkerNotFound`, and a set with no anchor --
+    or with more than one -- raises `ValueError`. Both are caught and reported.
+    Nothing else is, so a genuine bug inside the comparison surfaces rather than
+    being published as "this bundle holds no comparison".
     """
     try:
         report = compare_runs(records, marker_text=MARKER_TEXT)

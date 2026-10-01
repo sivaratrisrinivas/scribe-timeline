@@ -269,13 +269,13 @@ describe("the silence a commit was cut from", () => {
   });
 
   it("spans the silence, not the commit, so a commit is not read as a boundary", () => {
-    // The second commit's first word is at 6220 ms and the first commit's last word
+    // The second commit's first word is at 6320 ms and the first commit's last word
     // ended at 640 ms: over five seconds of silence, which is where VAD was free to
     // cut and where the boundary is drawn.
     const gap = timeline().commits[1]!;
 
     expect(gap.boundaryFromMs).toBe(640);
-    expect(gap.boundaryToMs).toBe(6_220);
+    expect(gap.boundaryToMs).toBe(6_320);
   });
 
   it("has no boundary for the first commit, which was cut from the start", () => {

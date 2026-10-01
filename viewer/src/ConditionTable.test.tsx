@@ -113,7 +113,7 @@ describe("what the table is", () => {
     // arithmetic itself.
     renderTable();
 
-    expect(screen.getByText(/no arithmetic is done in this page/i)).toBeInTheDocument();
+    expect(screen.getByText(/This page subtracts nothing/i)).toBeInTheDocument();
   });
 
   it("states that no timestamp is compared to a clip's insertion point", () => {

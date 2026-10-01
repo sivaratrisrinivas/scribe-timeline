@@ -27,6 +27,26 @@ export const MARKER_TEXT = "Zorblax";
 /** The returned marker timestamp under VAD with two preceding commits. */
 export const MARKER_RETURNED_MS = 12_380;
 
+/** Where the recogniser placed each preceding segment's word, relative to that
+ *  segment's start sample, in milliseconds.
+ *
+ *  Copied from the published `vad_2` run rather than invented, because the commit
+ *  boundaries on the track are drawn at these positions: a fixture 100 ms off the
+ *  evidence would put every boundary band somewhere the real run has no silence.
+ *  `syntheticGeometry.test.ts` reads the published record and asserts these still
+ *  match, so a regenerated clip or a re-measured run fails there rather than
+ *  quietly leaving every boundary test describing different audio.
+ */
+export const EARLIER_WORD_OFFSETS_MS = [220, 320] as const;
+
+/** How long each preceding segment's returned word lasted, in milliseconds.
+ *
+ *  From the same published run. The two differ by 20 ms -- one quantisation step --
+ *  and a boundary band's right-hand edge sits on this number, so it is copied rather
+ *  than rounded to something tidier.
+ */
+export const EARLIER_WORD_DURATIONS_MS = [420, 400] as const;
+
 /** The only event type that carries word timestamps, and so the only one a commit
  *  can be read from. Mirrors `scribe_timeline.capture.completion.TIMESTAMPED_EVENT`. */
 export const TIMESTAMPED_EVENT = "committed_transcript_with_timestamps";
@@ -67,11 +87,13 @@ export function syntheticRecordJson(options: SyntheticOptions = {}): unknown {
     // purpose: this fixture exists to catch a sample/millisecond mix-up, so the
     // conversion should be legible rather than folded into a divisor.
     const startMs = (startSample * 1000) / sampleRate;
+    const offset = earlierOffsetMs(index);
+    const duration = earlierDurationMs(index);
     return {
       // The server's rendering of the fixture's "Kalvik". Nothing measures it.
       text: "Kolvig.",
-      start_ms: startMs + 220,
-      end_ms: startMs + 640,
+      start_ms: startMs + offset,
+      end_ms: startMs + offset + duration,
       logprob: -0.8 - index * 0.01,
     };
   });
@@ -126,7 +148,16 @@ export function syntheticRecordJson(options: SyntheticOptions = {}): unknown {
         clock_origin: "monotonic_since_connect",
         payload: {
           words: [
-            { text: "Kolvig.", start: (startMs(startSample, sampleRate) + 220) / 1000, end: (startMs(startSample, sampleRate) + 640) / 1000 },
+            {
+              text: "Kolvig.",
+              start:
+                (startMs(startSample, sampleRate) + earlierOffsetMs(index)) / 1000,
+              end:
+                (startMs(startSample, sampleRate) +
+                  earlierOffsetMs(index) +
+                  earlierDurationMs(index)) /
+                1000,
+            },
           ],
         },
       })),
@@ -168,6 +199,20 @@ function startMs(startSample: number, sampleRate: number): number {
   return (startSample * 1000) / sampleRate;
 }
 
+/** The measured onset of a preceding segment's word, in ms after its clip starts.
+ *
+ *  Falls back to the first observed offset for a segment beyond the two this
+ *  project streams, so an extended fixture is still a plausible one rather than a
+ *  crash -- the parity test covers the two that are real.
+ */
+function earlierOffsetMs(index: number): number {
+  return EARLIER_WORD_OFFSETS_MS[index] ?? EARLIER_WORD_OFFSETS_MS[0]!;
+}
+
+function earlierDurationMs(index: number): number {
+  return EARLIER_WORD_DURATIONS_MS[index] ?? EARLIER_WORD_DURATIONS_MS[0]!;
+}
+
 /** The commits the export would write for the default synthetic record.
  *
  *  Derived by hand from the events above rather than by running the exporter,
@@ -185,8 +230,9 @@ export function syntheticCommitsJson(
     ...priorStarts.map((startSample, index) => ({
       commit_index: index + 1,
       word_count: 1,
-      first_word_ms: startMs(startSample, sampleRate) + 220,
-      last_word_ms: startMs(startSample, sampleRate) + 640,
+      first_word_ms: startMs(startSample, sampleRate) + earlierOffsetMs(index),
+      last_word_ms:
+        startMs(startSample, sampleRate) + earlierOffsetMs(index) + earlierDurationMs(index),
     })),
     ...(markerStartMs === null
       ? []

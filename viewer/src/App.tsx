@@ -34,10 +34,11 @@ import {
   type RunIndexEntry,
 } from "./runIndex.js";
 import { InvalidRunRecordError, parseRunRecord } from "./runRecord.js";
-import { entryFor, type Selection } from "./selection.js";
+import { conditionOf, entryFor, type Selection } from "./selection.js";
 import {
   buildTimeline,
   MarkerTextAbsentError,
+  normaliseToken,
   type Timeline,
   UnimplementedMatchRuleError,
 } from "./timeline.js";
@@ -139,7 +140,7 @@ export function App() {
       };
       if (cancelled) return;
       setBundle(loaded);
-      setComparison(parseComparison(comparisonDocument));
+      setComparison(parseComparisonSafely(comparisonDocument));
       // The URL wins when it names a run; otherwise the first one the bundle lists.
       // An unrecognised name is passed through rather than replaced, so it is
       // refused below instead of quietly showing a reader a different run.
@@ -158,18 +159,17 @@ export function App() {
     // Held in a local, because the loader closes over it and TypeScript will not carry
     // the narrowing of the outer `bundle` into a callback.
     const index = bundle;
+    const wanted = runId;
     let cancelled = false;
     async function loadRun(): Promise<void> {
       // Reset on every switch, so the previous run's timeline is never on screen
       // under a heading that now names a different one. A stale timeline labelled
       // with the wrong condition is worse than a brief pause.
       setRun({ status: "loading" });
-      const entry = [...index.groups.values()]
-        .flat()
-        .find((candidate) => candidate.runId === runId);
+      const entry = conditionOf(index.groups, wanted)?.find((run) => run.runId === wanted);
       if (entry === undefined) {
         throw new Error(
-          `No run named ${JSON.stringify(runId)} is in this bundle. Available: ` +
+          `No run named ${JSON.stringify(wanted)} is in this bundle. Available: ` +
             index.runIds.join(", "),
         );
       }
@@ -253,22 +253,44 @@ export function App() {
   );
 }
 
-/** The measured marker's returned timestamp, when this run's timeline carries it.
+/**
+ * Read the comparison, or say why it could not be read.
  *
- *  Matched by the report's own marker text, not by "the first marker": a record
- *  naming two markers would otherwise have one of them presented as the measured
- *  word, which is the kind of wrong answer that looks entirely plausible.
+ *  The comparison is one of three documents the page reads, and it is the only
+ *  source of the deltas -- but a run record is evidence in its own right, and it is
+ *  the only source of the audio, the returned words and the commit boundaries. So a
+ *  malformed report withholds *its* figures and leaves the run standing, rather than
+ *  taking the evidence down with it. A page that loses the track and the audio
+ *  because a summary could not be read has thrown away more than it protected.
+ */
+function parseComparisonSafely(document: unknown): Comparison {
+  try {
+    return parseComparison(document);
+  } catch (error) {
+    if (error instanceof InvalidComparisonError) {
+      return { kind: "unavailable", reason: `this report could not be read: ${error.message}` };
+    }
+    throw error;
+  }
+}
+
+/**
+ * The measured marker's returned timestamp, when this run's timeline carries it.
+ *
+ *  Located under the *recorded* match rule, the same one the runner applied and the
+ *  same one the timeline already used to place the marker. A looser rule here would
+ *  be a second rule quietly deciding which word was measured, and it would fail
+ *  silently: a marker the server returned as `Zorblax,` would stop matching, the
+ *  figure would vanish, and nothing on the page would say why.
  *
  *  Null when the report and the run disagree about which word was measured, and null
- *  when no comparison has loaded -- there being no marker text to check against. The
+ *  when no report has loaded -- there being no marker text to check against. The
  *  figure is withheld rather than guessed, because the comparison quotes this run's
- *  median and a per-run figure from the wrong word would sit beside it unchallenged.
+ *  median and a per-run figure for the wrong word would sit beside it unchallenged.
  */
 function measuredMarkerMs(timeline: Timeline, comparison: Comparison): number | null {
   if (comparison.kind !== "report") return null;
-  const wanted = comparison.report.markerText.toLocaleLowerCase();
-  const match = timeline.markers.find(
-    (marker) => marker.text.toLocaleLowerCase() === wanted,
-  );
+  const wanted = normaliseToken(comparison.report.markerText);
+  const match = timeline.markers.find((marker) => normaliseToken(marker.text) === wanted);
   return match?.returnedWord.startMs ?? null;
 }

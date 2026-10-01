@@ -303,12 +303,12 @@ describe("where the server cut", () => {
 
     const boundaries = screen.getAllByTestId("commit-boundary");
     expect(boundaries).toHaveLength(2);
-    // Commit 2 was cut from the 5.6 s of silence after commit 1; commit 3 from the
-    // silence between 6640 ms and the marker at 12380 ms.
-    expect(boundaries[0]).toHaveAttribute("title", expect.stringContaining("640 ms and 6220 ms"));
+    // Commit 2 was cut from the 5.7 s of silence after commit 1; commit 3 from the
+    // silence between 6720 ms and the marker at 12380 ms.
+    expect(boundaries[0]).toHaveAttribute("title", expect.stringContaining("640 ms and 6320 ms"));
     expect(boundaries[1]).toHaveAttribute(
       "title",
-      expect.stringContaining("6640 ms and 12380 ms"),
+      expect.stringContaining("6720 ms and 12380 ms"),
     );
     expect(boundaries[0]).toHaveAttribute("title", expect.stringContaining("does not say where"));
   });
