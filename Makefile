@@ -1,4 +1,4 @@
-.PHONY: help setup test lint typecheck schema check viewer-test viewer-export viewer build fixtures capture matrix
+.PHONY: help setup test lint typecheck schema check viewer-test viewer-export viewer build walkthrough fixtures capture matrix
 
 help:
 	@echo "setup          Take a fresh clone to a working state: dependencies, then the viewer bundle"
@@ -7,6 +7,7 @@ help:
 	@echo "viewer-export  Rebuild viewer/public from saved run records and committed clips"
 	@echo "viewer         Serve the viewer locally (no network, no API key)"
 	@echo "build          Build the static bundle in viewer/dist, ready to host anywhere"
+	@echo "walkthrough    Re-record docs/walkthrough.webm from the built viewer (needs npm + network for the first run)"
 	@echo "lint           Ruff + mypy + tsc"
 	@echo "schema         Regenerate schema/run-record.schema.json from the models"
 	@echo "check          Everything CI runs (no network, no API key)"
@@ -49,6 +50,18 @@ build: viewer-export
 
 schema:
 	uv run python scripts/generate_json_schema.py
+
+# Re-records the walkthrough from the built viewer. Depends on `build` because the
+# recording drives viewer/dist rather than a dev server -- the same directory that is
+# published, mounted under a subpath, so the video shows what a reader would see.
+#
+# The one target here that reaches the network, and it does so only to install
+# Playwright's browser if it is not already present. It needs no API key and spends no
+# credit: the runs it records are the committed ones.
+walkthrough: build
+	cd viewer && npm install --no-save playwright
+	npx playwright install chromium
+	node scripts/record_walkthrough.js
 
 lint:
 	uv run ruff check .
