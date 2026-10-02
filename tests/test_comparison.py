@@ -32,7 +32,7 @@ from scribe_timeline.analysis.compare import (
     compare_runs,
     observed_commit_count,
 )
-from scribe_timeline.analysis.matching import MarkerNotFound
+from scribe_timeline.analysis.matching import MATCH_RULE, MarkerNotFound
 from scribe_timeline.audio.family import MARKER_TEXT
 from scribe_timeline.capture.completion import TIMESTAMPED_EVENT
 from scribe_timeline.records import (
@@ -106,6 +106,8 @@ def _record(
             ),
         ),
         events=_commit_events(commits if commits is not None else prior_segment_count + 1),
+        match_rule=MATCH_RULE,
+        source_timestamp_unit="seconds",
     )
 
 

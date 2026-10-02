@@ -293,6 +293,36 @@ def test_schema_version_is_shared_between_both_sides(ts_source: str, schema: JSO
     assert "schema_version" in schema["required"]
 
 
+def test_both_sides_pin_the_same_schema_version(ts_source: str, schema: JSONObject) -> None:
+    """The version each side implements, asserted equal from the values.
+
+    The same number is written in three places -- the Python constant, the schema's
+    `const`, and the viewer's exported constant -- because a record crosses a process
+    boundary as bytes and each side has to know the contract independently. A parser
+    reading a record written for a later contract would apply this one's rules to it,
+    and the only symptom would be plausible timestamps.
+
+    The Python side is compared through the generated schema rather than by
+    string-matching the source, so this holds however either file is formatted. The
+    TypeScript side is read as a value, not as a line of text: a declaration that grew
+    an annotation, or a second copy of the number in a comment, would both break a
+    line match without anything being wrong.
+    """
+    from scribe_timeline.records import SCHEMA_VERSION
+
+    assert schema["properties"]["schema_version"]["const"] == SCHEMA_VERSION
+
+    declared = re.search(
+        r"export const SUPPORTED_SCHEMA_VERSION\s*(?::\s*number)?\s*=\s*(\d+)\s*;",
+        ts_source,
+    )
+    assert declared is not None, (
+        f"{TS_PATH.name} does not export SUPPORTED_SCHEMA_VERSION as a number; the "
+        f"version each side implements has to be declared, not inferred"
+    )
+    assert int(declared.group(1)) == SCHEMA_VERSION
+
+
 def test_schema_required_fields_are_not_optional_in_typescript(
     ts_source: str, schema: JSONObject
 ) -> None:

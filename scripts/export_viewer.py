@@ -36,6 +36,7 @@ records are the evidence and are served byte-for-byte:
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -52,6 +53,12 @@ from scribe_timeline.viewer.audio import RecordAudioMismatch, wav_for_record  # 
 from scribe_timeline.viewer.commits import UnknownSourceUnit, commit_extents  # noqa: E402
 
 DEFAULT_RUN_GLOB = "evidence/runs/*.json"
+
+#: The directories the bundle is written into, and the only ones the export replaces
+#: wholesale. Named because the replacement is per-directory and order-sensitive: the
+#: rollback has to be able to tell which of them it disturbed.
+BUNDLE_DIRS = ("runs", "audio")
+
 PUBLIC_DIR = REPO_ROOT / "viewer" / "public"
 INDEX_FILENAME = "runs.json"
 COMPARISON_FILENAME = "comparison.json"
@@ -157,15 +164,13 @@ def export(paths: Sequence[Path], *, public_dir: Path = PUBLIC_DIR) -> list[dict
     if not sources:
         raise SystemExit(f"no run records matched {DEFAULT_RUN_GLOB}")
 
-    (public_dir / "runs").mkdir(parents=True, exist_ok=True)
-    (public_dir / "audio").mkdir(parents=True, exist_ok=True)
-
-    entries: list[dict[str, object]] = []
-    failures: list[str] = []
+    # Everything is derived before anything on disk is touched. A refusal part way
+    # through would otherwise leave the previous bundle's index pointing at files
+    # that had just been cleared -- a bundle that was working replaced by one that is
+    # broken, over a bad record the reader did not ask about. So the pass that can
+    # refuse runs first, and only what it all accepted is written.
+    prepared: list[tuple[Path, RunRecord, list[dict[str, object]], bytes | None, str | None]] = []
     for path, record in sources:
-        # Copied verbatim, not re-serialised: the site must serve the same bytes the
-        # comparison read, so a reader can check any figure against the served file.
-        (public_dir / "runs" / f"{record.run_id}.json").write_text(path.read_text())
         try:
             commits = commits_for(record)
         except UnknownSourceUnit as exc:
@@ -174,27 +179,90 @@ def export(paths: Sequence[Path], *, public_dir: Path = PUBLIC_DIR) -> list[dict
             # would contribute would be wrong by a factor that reads as a timeline.
             raise SystemExit(f"{path}: {exc}") from exc
         try:
-            (public_dir / "audio" / f"{record.run_id}.wav").write_bytes(
-                wav_for_record(record, clips)
-            )
+            audio: bytes | None = wav_for_record(record, clips)
+            failure: str | None = None
         except RecordAudioMismatch as exc:
             # One unreplayable record must not cost the reader the other eleven.
-            failures.append(f"{record.run_id}: {exc}")
-            entries.append(index_entry(record, has_audio=False, commits=commits))
-            continue
-        entries.append(index_entry(record, has_audio=True, commits=commits))
+            audio, failure = None, f"{record.run_id}: {exc}"
+        prepared.append((path, record, commits, audio, failure))
 
-    index = {
-        "note": (
-            "Saved evidence, replayed from committed clips. No capture was re-run and no "
-            "API call was made to build this."
-        ),
-        "runs": entries,
-    }
-    (public_dir / INDEX_FILENAME).write_text(json.dumps(index, indent=2) + "\n")
+    # The old bundle is moved aside rather than deleted, and put back if anything
+    # below fails. Two problems, one mechanism:
+    #
+    # * A refusal part way through would leave the previous index pointing at files
+    #   that had been cleared -- a bundle that was working, replaced by one that is
+    #   broken, over a record the reader never asked about.
+    # * Writing into the live directory leaves a run's *previous* WAV in place when
+    #   the same run id can no longer be rebuilt, so the bundle would serve audio the
+    #   index says is not there.
+    #
+    # The old bundle is replaced only once the new one is complete, so a reader is
+    # never left with a half-written one and a failure leaves what they had.
+    replaced: dict[str, Path | None] = {}
+    """Each bundle directory, and where its previous contents were moved to.
 
-    comparison = comparison_document([record for _, record in sources])
-    (public_dir / COMPARISON_FILENAME).write_text(json.dumps(comparison, indent=2) + "\n")
+    Tracked per directory rather than as one flag, because the failure can land
+    between the two moves: undoing a bundle by a single all-or-nothing step would then
+    either strand one directory's contents under a temporary name or delete the other
+    directory outright. `None` means there was nothing there to displace.
+    """
+    entries: list[dict[str, object]] = []
+    failures: list[str] = []
+    # Everything from here to the `raise` is undoable, including the move-aside: a
+    # failure part way through that left the old directories renamed and no new ones
+    # would take the bundle down entirely, and would strand the backups where a build
+    # would copy them into the published output. `BaseException` because an interrupt
+    # is exactly the case worth surviving -- a half-swapped bundle is the worst of the
+    # three outcomes.
+    try:
+        for name in BUNDLE_DIRS:
+            target = public_dir / name
+            if target.exists():
+                backup = target.with_name(f"{name}.replaced")
+                shutil.rmtree(backup, ignore_errors=True)
+                target.rename(backup)
+                replaced[name] = backup
+            else:
+                replaced[name] = None
+            target.mkdir(parents=True, exist_ok=True)
+
+        for path, record, commits, audio, failure in prepared:
+            # Copied verbatim, not re-serialised: the site must serve the same bytes
+            # the comparison read, so a reader can check any figure against the bytes
+            # the site served.
+            (public_dir / "runs" / f"{record.run_id}.json").write_text(path.read_text())
+            if audio is None:
+                assert failure is not None  # the two are set together above
+                failures.append(failure)
+                entries.append(index_entry(record, has_audio=False, commits=commits))
+                continue
+            (public_dir / "audio" / f"{record.run_id}.wav").write_bytes(audio)
+            entries.append(index_entry(record, has_audio=True, commits=commits))
+
+        index = {
+            "note": (
+                "Saved evidence, replayed from committed clips. No capture was re-run and no "
+                "API call was made to build this."
+            ),
+            "runs": entries,
+        }
+        (public_dir / INDEX_FILENAME).write_text(json.dumps(index, indent=2) + "\n")
+
+        comparison = comparison_document([record for _, record in sources])
+        (public_dir / COMPARISON_FILENAME).write_text(json.dumps(comparison, indent=2) + "\n")
+    except BaseException:
+        # Undo each directory on its own, and only the ones this export reached. An
+        # interruption can land between the two moves, so the second directory may
+        # still be holding perfectly good contents that were never touched -- clearing
+        # it because its partner was disturbed would destroy a working bundle to fix a
+        # first one that was merely stranded.
+        for name, displaced in replaced.items():
+            shutil.rmtree(public_dir / name, ignore_errors=True)
+            if displaced is not None:
+                displaced.rename(public_dir / name)
+        raise
+    for stale in (path for path in replaced.values() if path is not None):
+        shutil.rmtree(stale, ignore_errors=True)
 
     for failure in failures:
         print(f"no audio: {failure}", file=sys.stderr)

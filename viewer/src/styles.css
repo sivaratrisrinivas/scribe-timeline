@@ -220,7 +220,8 @@ body {
 }
 
 .table__anchor,
-.table__baseline {
+.table__baseline,
+.table__missing {
   color: var(--ink-soft);
   font-weight: 400;
 }

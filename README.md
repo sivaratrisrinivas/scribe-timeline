@@ -60,18 +60,25 @@ All three would have produced confident wrong numbers rather than errors:
 ## Running it
 
 ```sh
-make setup         # dependencies, and export the viewer bundle
+make setup         # the only command a fresh clone needs: dependencies, then the bundle
 make check         # lint, typecheck, both suites. No network, no API key.
 make viewer        # serve the viewer locally (no network, no API key)
+make build         # build viewer/dist: a directory of files, hostable as-is
 make viewer-export # rebuild the viewer bundle from saved records and clips
 make fixtures      # generate the speech clips (needs the key, once)
 make capture       # stream one condition and report what came back
 make matrix        # run all four conditions x three repeats and compare them
 ```
 
+`git clone`, then `make setup`, and the project works. Nothing else is required to
+read the evidence: the fixtures, the analysis, the tests and the viewer all run
+without a credential, and `make check` builds the viewer bundle itself, so the gate
+is the gate from a clean checkout.
+
 `make check` is the whole gate, and it needs no credentials. The key is read from
 `ELEVENLABS_API_KEY` and is used only by `make fixtures`, `make capture`, and
-`make matrix`.
+`make matrix`. Copy `.env.example` to `.env` and export it, or export it directly —
+the runner reads the environment and nothing reads the file.
 
 `make matrix` takes about four minutes and costs well under a cent. To re-derive
 the comparison from records already on disk, spending nothing:
@@ -131,6 +138,24 @@ Everything the page shows comes from files already in the repository. It makes n
 request other than for its own bundle, which a test asserts, and a run whose audio
 could not be rebuilt is listed with no player rather than with a broken one.
 
+`make build` produces `viewer/dist`, the public artifact: the bundle plus the
+compiled page, in one directory any static host can serve. Still no network and no
+key — the input is the committed evidence.
+
+The bundle is rebuilt from scratch rather than written into, so a run dropped from
+the evidence leaves nothing behind to be published, and a WAV the index says is
+absent cannot still be sitting there from an earlier export. The old bundle is moved
+aside and only removed once the new one is complete, so a record that cannot be read
+names itself and stops the export without costing a reader the runs that were fine —
+including when the export is interrupted part way through.
+
+**A malformed bundle fails rather than renders.** A record that does not match the
+schema, a host that answers for a missing file with its own index page, a WAV that
+will not load, a `schema_version` this viewer does not implement — each is reported
+in place, with the file named. None of them is rendered as a zero, a dash, or an
+empty table, because on this page a substituted value is indistinguishable from a
+measurement.
+
 ## The question
 
 Issue #849 reports that Scribe v2 Realtime word timestamps drift by roughly
@@ -188,11 +213,22 @@ walked for credential-shaped keys at every depth and rejected outright. The only
 credential-named field is a boolean recording that nothing was stored. A redacted
 payload would be silently incomplete evidence, so the guard fails loudly instead.
 
+The published bundle is checked for a key the same way, from the other direction:
+`tests/test_offline_viewing.py` plants a key-shaped value in the environment, builds
+the whole bundle, and greps every byte written for it. A credential guard that only
+inspected *keys* in a payload would not catch a secret sitting in a value, so the
+end-to-end check is what backs the claim that a reader can be handed these files.
+
 ## Setup
 
 ```sh
+git clone <this repository> && cd scribe-timeline
 make setup     # uv sync + npm install + export the viewer bundle
 ```
+
+That is the whole of it. `make setup` takes a fresh clone to a state where
+`make check` passes, `make viewer` serves the evidence, and `make build` produces
+`viewer/dist` for hosting. No account, no key, no network.
 
 ## Layout
 
@@ -207,7 +243,8 @@ make setup     # uv sync + npm install + export the viewer bundle
 - `src/scribe_timeline/viewer/` — rebuilding a run record's audio, and refusing to
   when the committed clips no longer match what was captured; and reading each run's
   commit boundaries off the audio clock, in the unit the record itself names
-- `viewer/src/runRecord.ts` — the TypeScript projection of that schema
+- `viewer/src/runRecord.ts` — the TypeScript projection of that schema, and the
+  version of it this viewer implements
 - `viewer/src/comparison.ts` — the exported report, parsed. The page reads the
   deltas; it never computes them
 - `viewer/src/timeline.ts` — the record as geometry: every position on screen is
@@ -216,6 +253,17 @@ make setup     # uv sync + npm install + export the viewer bundle
   record's milliseconds
 - `scripts/generate_json_schema.py` — regenerates the schema (`make schema`)
 - `scripts/export_viewer.py` — builds the viewer's static bundle (`make viewer-export`)
+
+Three test modules guard the promises rather than the code:
+
+- `tests/test_offline_viewing.py` — the whole export and the whole re-derivation,
+  run with every socket call made to fail and the key deleted, then with reading the
+  key made fatal. This is what backs "free to view" and "re-derivable for nothing"
+- `tests/test_static_bundle.py` — the built `viewer/dist`: that it carries the
+  published evidence and nothing stale, that its comparison is the published one,
+  and that it loads nothing from another origin
+- `tests/test_setup_contract.py` — that `make check` builds the bundle before the
+  tests that read it, and that a paid rerun and a key file are both uncommittable
 
 `make check` fails if the committed schema drifts from the models, and a parity
 test asserts the TypeScript parser agrees with the schema on field names, types,
@@ -238,6 +286,28 @@ return a plausible number for the wrong word. If the marker is absent, the run
 is an error — not a zero. A word whose text matches but whose timing is missing
 is also a miss, for the same reason: a substituted zero would be a timestamp the
 server never sent.
+
+**The record's version is pinned, on both sides.** `schema_version` is a literal in
+the Python model, and the viewer refuses any value but the one it implements, naming
+both. A version field nobody reads is not a version: a record written under a
+different contract would be read with this one's rules, and a unit that changed
+between versions would put every figure out by a factor that still looks like a
+timestamp. The three declarations of that number are compared by test, so none of
+them can move alone.
+
+**The two fields a reader must be told are required, not defaulted.** `match_rule`
+names *which word was measured*, and `source_timestamp_unit` is the unit every
+converted figure rests on. Both used to carry defaults, and both defaults would have
+answered a question on the record's behalf: a record missing `source_timestamp_unit`
+would be read as `seconds`, which is exactly the value that makes a wrong reading
+look right. They are required now, on both sides, and the schema says so. What
+remains optional is what is honestly optional — an empty event list is a run that
+returned no events, and `api_key_present` is a flag.
+
+**A refusal leaves what was working alone.** The exporter derives everything before
+it touches the bundle, and swaps the old one aside until the new one is complete. A
+corrupt record names itself and stops the export; it does not cost a reader the
+eleven runs that were fine.
 
 **A capture ends when the marker arrives, not when the first commit does.** Under
 VAD the earlier segments commit first, so "a commit came back" is not the same

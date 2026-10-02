@@ -73,7 +73,11 @@ function renderTable(
     readonly selectedMarkerMs?: number | null;
   } = {},
 ) {
-  const { report, groups } = options.report === null ? { report: null, groups: shipped().groups } : shipped();
+  const { report: shippedReport, groups } = shipped();
+  // The caller's report wins, so a test can put a shape in front of the component
+  // that the shipped bundle does not contain. Reading the shipped one regardless
+  // would make such a test pass against the wrong row.
+  const report = options.report === null ? null : (options.report ?? shippedReport);
   const onSelect = vi.fn();
   const selectedRunId = options.selectedRunId ?? "2026-10-01T21-12-51Z__vad_2__rep2";
   render(
@@ -159,6 +163,31 @@ describe("expected against returned, side by side", () => {
     const anchor = row("vad_0");
     expect(anchor).toHaveTextContent(/baseline/i);
     expect(anchor).not.toHaveTextContent(/[+-]0(\.0)?\s*ms/);
+  });
+
+  it("renders a condition carrying no delta as having none, not as zero", () => {
+    // The report cannot reach the table in this state -- the parser refuses a null
+    // delta on a non-anchor -- so the row is built by hand. It is here because the
+    // component must not be the layer that invents the zero: `+0` in the one column
+    // a reader takes the finding from is indistinguishable from a measured absence of
+    // drift, and nothing else on the page would show it had been substituted. It
+    // must also not be labelled "baseline", which claims the row *is* the anchor --
+    // a second false statement, and one the parser was right to prevent.
+    const { report } = shipped();
+    const anchor = report.conditions.find((condition) => condition.isAnchor)!;
+    renderTable({
+      report: {
+        ...report,
+        conditions: [
+          { ...anchor, isAnchor: false, deltaVsAnchorMs: null, deltaIntervalMs: null },
+        ],
+      },
+    });
+
+    const cell = within(row("vad_0")).getByTestId("delta");
+    expect(cell).toHaveTextContent(/no delta recorded/i);
+    expect(cell).not.toHaveTextContent("baseline");
+    expect(cell).not.toHaveTextContent("0");
   });
 
   it("reports the run on screen beside the condition's median", () => {

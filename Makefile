@@ -1,11 +1,12 @@
-.PHONY: help setup test lint typecheck schema check viewer-test viewer-export viewer fixtures capture matrix
+.PHONY: help setup test lint typecheck schema check viewer-test viewer-export viewer build fixtures capture matrix
 
 help:
-	@echo "setup          Install Python and viewer dependencies, export the viewer bundle"
+	@echo "setup          Take a fresh clone to a working state: dependencies, then the viewer bundle"
 	@echo "test           Run the Python test suite"
 	@echo "viewer-test    Run the viewer test suite"
 	@echo "viewer-export  Rebuild viewer/public from saved run records and committed clips"
 	@echo "viewer         Serve the viewer locally (no network, no API key)"
+	@echo "build          Build the static bundle in viewer/dist, ready to host anywhere"
 	@echo "lint           Ruff + mypy + tsc"
 	@echo "schema         Regenerate schema/run-record.schema.json from the models"
 	@echo "check          Everything CI runs (no network, no API key)"
@@ -13,6 +14,12 @@ help:
 	@echo "capture        Stream one condition to Scribe (needs ELEVENLABS_API_KEY)"
 	@echo "matrix         Run the full comparison matrix (needs ELEVENLABS_API_KEY)"
 
+# The one command a fresh clone needs, and the only one a reader has to run.
+#
+# Order matters twice over. `uv sync --extra dev` first, because `uv run` otherwise
+# resolves a runtime-only environment and fails to find the test and lint tools -- a
+# confusing way to learn that setup was skipped. The viewer bundle last, so the
+# project is only declared working once there is something to serve.
 setup:
 	uv sync --extra dev
 	cd viewer && npm install
@@ -33,6 +40,13 @@ viewer-export:
 viewer:
 	cd viewer && npm run dev
 
+# The public artifact: a directory of files that can be hosted as-is. `viewer/public`
+# is served as static assets by the build, so the whole bundle -- every run record,
+# every rebuilt WAV, the comparison -- lands in `dist` with no server-side anything.
+# Still no network and no API key: the input is the committed evidence.
+build: viewer-export
+	cd viewer && npm run build
+
 schema:
 	uv run python scripts/generate_json_schema.py
 
@@ -41,7 +55,13 @@ lint:
 	uv run mypy
 	cd viewer && npx tsc --noEmit
 
-check: lint test viewer-test
+# The viewer's tests read the exported bundle -- `ConditionTable.test.tsx` reads
+# `viewer/public/comparison.json` -- so a fresh clone cannot run them until the
+# bundle exists. `viewer-export` is therefore FIRST: make runs prerequisites left to
+# right, and putting it later would leave a clean checkout failing the gate for a
+# reason that has nothing to do with the code under test. It costs nothing: the
+# export is derived from committed files and takes a couple of seconds.
+check: viewer-export lint test viewer-test
 	@uv run python scripts/generate_json_schema.py --check
 
 fixtures:

@@ -16,6 +16,7 @@ import {
   optionalString,
   requireArray,
   requireBoolean,
+  requireField,
   requireNonNegativeInteger,
   requireNonNegativeNumber,
   requireNumber,
@@ -25,6 +26,16 @@ import {
 } from "./json.js";
 
 export type CommitStrategy = "vad" | "manual";
+
+/** The only run-record contract this viewer reads.
+ *
+ * The Python model pins the same value (`scribe_timeline.records.SCHEMA_VERSION`),
+ * and a parity test asserts the two agree, so the number cannot drift on one side
+ * only. A record declaring any other version is refused rather than read under this
+ * one's assumptions: a later contract could name its timestamps differently, and
+ * every position drawn from it would look like a timeline and be wrong.
+ */
+export const SUPPORTED_SCHEMA_VERSION = 1;
 
 export interface Segment {
   readonly clip_id: string;
@@ -143,6 +154,16 @@ export function parseRunRecord(input: unknown): RunRecord {
 function readRunRecord(input: unknown): RunRecord {
   const root = requireObject(input, "runRecord");
 
+  const schemaVersion = requireNonNegativeInteger(root["schema_version"], "schema_version");
+  if (schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+    throw new InvalidRunRecordError(
+      `schema_version is ${schemaVersion}, and this viewer implements ` +
+        `${SUPPORTED_SCHEMA_VERSION}. Its fields are read under the rules of version ` +
+        `${SUPPORTED_SCHEMA_VERSION}, so a record written for another contract could be drawn ` +
+        `as a plausible timeline that is not one.`,
+    );
+  }
+
   const strategy = requireString(root["commit_strategy"], "commit_strategy");
   if (strategy !== "vad" && strategy !== "manual") {
     throw new InvalidRunRecordError(
@@ -214,7 +235,7 @@ function readRunRecord(input: unknown): RunRecord {
   const echoedStrategy = rawStrategy as CommitStrategy | null;
 
   return {
-    schema_version: requireNonNegativeInteger(root["schema_version"], "schema_version"),
+    schema_version: schemaVersion,
     run_id: requireString(root["run_id"], "run_id"),
     condition_id: requireString(root["condition_id"], "condition_id"),
     commit_strategy: strategy,
@@ -291,12 +312,16 @@ function readRunRecord(input: unknown): RunRecord {
       };
     }),
     api_key_present: requireBoolean(root["api_key_present"] ?? false, "api_key_present"),
-    match_rule: requireString(
-      root["match_rule"] ?? "exact-text-case-and-punctuation-insensitive",
-      "match_rule",
-    ),
+    // Required, not defaulted -- the schema says so, and the Python model enforces
+    // it. `match_rule` names which word was measured and `source_timestamp_unit` is
+    // the unit every converted figure rests on, so a record missing either would have
+    // this viewer answer both questions on its behalf and then print the answers as
+    // what the record said. `requireField` rather than `requireString` on a possibly
+    // absent key, so the message says the field is missing rather than that it is
+    // not a string.
+    match_rule: requireString(requireField(root, "match_rule", "runRecord"), "match_rule"),
     source_timestamp_unit: requireString(
-      root["source_timestamp_unit"] ?? "seconds",
+      requireField(root, "source_timestamp_unit", "runRecord"),
       "source_timestamp_unit",
     ),
   };

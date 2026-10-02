@@ -91,8 +91,16 @@ function ConditionRow({
           // Not "0". A delta of zero against itself would read as "no drift", where
           // the truth is that this is the baseline every other row is measured from.
           <span className="table__baseline">baseline</span>
+        ) : condition.deltaVsAnchorMs === null ? (
+          // Unreachable through the parser, which refuses a missing delta on a
+          // non-anchor rather than publishing a comparison it cannot stand behind.
+          // Kept explicit anyway: the alternative is `?? 0`, and a zero in the one
+          // column a reader takes the finding from is indistinguishable from a
+          // measured absence of drift. Saying the figure is absent is a statement
+          // about the row, and unlike a zero it is true.
+          <span className="table__missing">no delta recorded</span>
         ) : (
-          signedMs(condition.deltaVsAnchorMs ?? 0)
+          signedMs(condition.deltaVsAnchorMs)
         )}
       </td>
       <td className="table__figures">{range(condition.deltaIntervalMs)}</td>

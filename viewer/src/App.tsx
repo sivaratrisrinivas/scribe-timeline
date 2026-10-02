@@ -57,7 +57,13 @@ interface Bundle {
 
 type RunState =
   | { readonly status: "loading" }
-  | { readonly status: "failed"; readonly message: string }
+  | {
+      readonly status: "failed";
+      readonly message: string;
+      /** Which of the three documents failed. A bundle that cannot be read has no
+       *  run to show, and saying otherwise sends a reader after the wrong file. */
+      readonly scope: "bundle" | "run";
+    }
   | { readonly status: "loaded"; readonly entry: RunIndexEntry; readonly timeline: Timeline };
 
 async function getJson(url: string): Promise<unknown> {
@@ -65,7 +71,21 @@ async function getJson(url: string): Promise<unknown> {
   if (!response.ok) {
     throw new Error(`${url} returned ${response.status} ${response.statusText}`);
   }
-  return (await response.json()) as unknown;
+  try {
+    return (await response.json()) as unknown;
+  } catch (error) {
+    // Named, and named as a whole-document failure. A static host asked for a file
+    // it does not have answers with the site's own index page and a 200 on several
+    // configurations, so the browser's complaint is about a token, on a page, in a
+    // file the reader never named. The most useful thing to say is which file, and
+    // that whatever came back was not the document.
+    throw new Error(
+      `${url} did not return JSON (${error instanceof Error ? error.message : String(error)}). ` +
+        `Nothing is shown from it: a page that guessed at the contents of a file it ` +
+        `could not read would be guessing at the evidence. If the bundle was deployed ` +
+        `by hand, check that this file was deployed.`,
+    );
+  }
 }
 
 /** A failure the reader can act on, rather than a stack trace or a blank page. */
@@ -109,6 +129,10 @@ export function App() {
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [run, setRun] = useState<RunState>({ status: "loading" });
+  // Whether the current run's audio element has failed to load. Held apart from the
+  // run itself, because the run is readable either way: the record, the returned
+  // words and the commit boundaries do not depend on the WAV having been deployed.
+  const [audioFailed, setAudioFailed] = useState(false);
   // The audio element arrives via a ref callback rather than `useRef`, because the
   // transport is built from the element and `useRef` would not trigger a render when
   // it attaches.
@@ -147,7 +171,9 @@ export function App() {
       setRunId(requestedRunId() ?? loaded.runIds[0] ?? null);
     }
     void loadBundle().catch((error: unknown) => {
-      if (!cancelled) setRun({ status: "failed", message: describeFailure(error) });
+      if (!cancelled) {
+        setRun({ status: "failed", scope: "bundle", message: describeFailure(error) });
+      }
     });
     return () => {
       cancelled = true;
@@ -164,8 +190,10 @@ export function App() {
     async function loadRun(): Promise<void> {
       // Reset on every switch, so the previous run's timeline is never on screen
       // under a heading that now names a different one. A stale timeline labelled
-      // with the wrong condition is worse than a brief pause.
+      // with the wrong condition is worse than a brief pause. The audio failure goes
+      // with it: it belongs to the run that was on screen when it happened.
       setRun({ status: "loading" });
+      setAudioFailed(false);
       const entry = conditionOf(index.groups, wanted)?.find((run) => run.runId === wanted);
       if (entry === undefined) {
         throw new Error(
@@ -182,7 +210,9 @@ export function App() {
       if (!cancelled) setRun({ status: "loaded", entry, timeline });
     }
     void loadRun().catch((error: unknown) => {
-      if (!cancelled) setRun({ status: "failed", message: describeFailure(error) });
+      if (!cancelled) {
+        setRun({ status: "failed", scope: "run", message: describeFailure(error) });
+      }
     });
     return () => {
       cancelled = true;
@@ -209,7 +239,11 @@ export function App() {
     if (run.status === "failed") {
       return (
         <main className="app app--notice app--error" role="alert">
-          <h1>This run cannot be shown</h1>
+          <h1>
+            {run.scope === "bundle"
+              ? "This bundle cannot be read"
+              : "This run cannot be shown"}
+          </h1>
           <p>{run.message}</p>
         </main>
       );
@@ -239,9 +273,23 @@ export function App() {
         controls
         preload="auto"
         src={entry.hasAudio ? entry.audioPath : undefined}
+        onError={() => setAudioFailed(true)}
       >
         {entry.hasAudio ? null : <p>This run has no rebuilt audio, so there is nothing to play.</p>}
       </audio>
+      {entry.hasAudio && audioFailed ? (
+        // The browser could not load the WAV. What the page does not know is why, and
+        // the possibilities are a file that was not deployed and a file that was
+        // deployed broken -- so the message states the failure and not a cause. A
+        // control that sits there doing nothing reads as a recording that is silent,
+        // which is a claim about the audio the page cannot support.
+        <p className="app--error" role="alert">
+          This run&rsquo;s audio could not be loaded from <code>{entry.audioPath}</code>, so there
+          is nothing to play. The index says the audio was rebuilt, so the file is either
+          absent from where this page was served or unreadable there. Everything below is
+          the run record&rsquo;s own, and is unaffected.
+        </p>
+      ) : null}
       {entry.hasAudio ? null : (
         <p className="app--error" role="alert">
           The audio for this run could not be rebuilt from the committed clips, so it is not

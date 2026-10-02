@@ -294,7 +294,6 @@
       "$ref": "#/$defs/Manifest"
     },
     "match_rule": {
-      "default": "exact-text-case-and-punctuation-insensitive",
       "title": "Match Rule",
       "type": "string"
     },
@@ -308,11 +307,11 @@
       "type": "string"
     },
     "schema_version": {
+      "const": 1,
       "title": "Schema Version",
       "type": "integer"
     },
     "source_timestamp_unit": {
-      "default": "seconds",
       "title": "Source Timestamp Unit",
       "type": "string"
     },
@@ -332,7 +331,9 @@
     "commit_strategy",
     "repeat_index",
     "manifest",
-    "echoed_config"
+    "echoed_config",
+    "match_rule",
+    "source_timestamp_unit"
   ],
   "title": "RunRecord",
   "type": "object"

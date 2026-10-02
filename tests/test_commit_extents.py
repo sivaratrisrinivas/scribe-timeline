@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import pytest
 
+from scribe_timeline.analysis.matching import MATCH_RULE
 from scribe_timeline.audio.family import MARKER_TEXT
 from scribe_timeline.capture.completion import TIMESTAMPED_EVENT
 from scribe_timeline.records import (
@@ -72,6 +73,7 @@ def _record(
         ),
         events=events,
         words=(),
+        match_rule=MATCH_RULE,
         source_timestamp_unit=source_timestamp_unit,
     )
 

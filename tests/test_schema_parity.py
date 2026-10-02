@@ -88,6 +88,22 @@ def test_free_form_payload_is_still_open_in_the_schema() -> None:
 
 
 def test_required_fields_are_the_ones_always_present() -> None:
+    """Every field a reader would have to be told is required, not defaulted.
+
+    A default on a required field is a substituted fact, and the two that used to
+    have them were the two a reader has most to lose:
+
+    * `match_rule` names *which word was measured*. Defaulted, a record that omitted
+      it would be read as though the exact rule had been applied, and the page prints
+      the value as the rule in force.
+    * `source_timestamp_unit` is the unit every converted figure rests on. Defaulted
+      to `"seconds"`, a record that omitted it would be asserting its own units, and
+      "seconds" is exactly the value that makes a wrong reading look right.
+
+    So both are required, and the fields that remain optional are the ones whose
+    absence is a fact rather than a gap: an empty event list is a run that returned
+    no events, and the boolean is a flag.
+    """
     schema = json.loads(SCHEMA_PATH.read_text())
 
     assert set(schema["required"]) == {
@@ -98,6 +114,8 @@ def test_required_fields_are_the_ones_always_present() -> None:
         "repeat_index",
         "manifest",
         "echoed_config",
+        "match_rule",
+        "source_timestamp_unit",
     }
 
 

@@ -26,14 +26,13 @@ from scribe_timeline.audio.timeline import Clip
 from scribe_timeline.capture.completion import TIMESTAMPED_EVENT
 from scribe_timeline.capture.plan import CapturePlan
 from scribe_timeline.records import (
+    SCHEMA_VERSION,
     EchoedSessionConfig,
     Manifest,
     RawEvent,
     RunRecord,
     WordTiming,
 )
-
-SCHEMA_VERSION = 1
 
 _SESSION_STARTED = "session_started"
 

@@ -43,7 +43,10 @@ activity detection choose them.
 
 - **`api_key_present: true`** records that a credential was in the environment
   when the run happened. It is a boolean. The key itself is never stored — see the
-  credential section of the top-level README.
+  credential section of the top-level README, and the end-to-end check for it in
+  `tests/test_offline_viewing.py`.
+- **`schema_version: 1`** is a literal in the model, not a free integer. A record
+  declaring any other version is refused rather than read under the wrong rules.
 - **Word timestamps in `events` are in seconds.** The API returns seconds despite
   the field names; `words[].start_ms` in the same file is the converted value, and
   `source_timestamp_unit` says so on every record. The raw values stay in `events`

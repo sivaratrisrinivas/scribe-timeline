@@ -18,7 +18,7 @@ Two rules shape the models here:
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
@@ -28,6 +28,23 @@ from scribe_timeline.audio.timeline import ComposedTimeline, Placement
 SampleIndex = Annotated[int, Field(ge=0)]
 
 CommitStrategy = Literal["vad", "manual"]
+
+#: The run-record contract this module defines.
+SCHEMA_VERSION: Final = 1
+
+#: The version a record must declare to be read at all.
+#:
+#: Pinned to one value rather than left a free integer, because a free integer is a
+#: version nobody reads: a record written under a different contract would be
+#: parsed with this module's assumptions -- the same field names, the same units --
+#: and a unit that changed between versions would put every figure out by a factor
+#: that still looks like a timestamp.
+#:
+#: Spelled as a literal rather than `Literal[SCHEMA_VERSION]` so the type checker
+#: accepts it, which leaves the number written twice. `test_run_record.py` asserts
+#: the two are equal, and the viewer's own pin is compared against the schema's
+#: `const` by `test_contract_parity.py`, so neither pair can drift unnoticed.
+SchemaVersion = Literal[1]
 
 
 class _Strict(BaseModel):
@@ -282,7 +299,12 @@ class RunRecord(_Strict):
     """One condition, one repeat, one strategy: everything needed to re-derive
     the result without re-running it."""
 
-    schema_version: int
+    schema_version: SchemaVersion
+    """The record contract this document was written under.
+
+    Refused rather than coerced when it names another version, so a record from a
+    contract this code does not implement cannot be read with the wrong rules.
+    """
     run_id: str
     condition_id: str
     commit_strategy: CommitStrategy
@@ -297,14 +319,20 @@ class RunRecord(_Strict):
     Recorded for honesty about the run environment. The credential itself is
     never stored, so run records remain safe to publish.
     """
-    match_rule: str = "exact-text-case-and-punctuation-insensitive"
+    match_rule: str
     """How the measured marker was located in the returned transcript.
 
     Travels with the record so a reader knows which word was measured, rather than
     inferring it. A run whose marker was absent raises instead of recording a
     fallback match, so this rule describes what actually happened.
+
+    Required rather than defaulted. This field names *which word was measured*, and a
+    default would answer that question on the record's behalf: a record that omitted
+    it would be read as though the exact rule had been applied, and the page prints
+    this value as the rule in force. That is a substituted fact in the one field a
+    reader has to trust to check anything else.
     """
-    source_timestamp_unit: str = "seconds"
+    source_timestamp_unit: str
     """The unit the API returned word timestamps in, before conversion to ms.
 
     The realtime `committed_transcript_with_timestamps` event was measured returning
@@ -312,4 +340,9 @@ class RunRecord(_Strict):
     millisecond convention elsewhere. Storing those numbers in a `ms` field would be
     wrong by 1000x and still look plausible, so the unit is recorded and the raw
     values stay in `events` for verification.
+
+    Required rather than defaulted, and for the same reason as `match_rule`: this is
+    the conversion every figure on the page rests on, and a missing field defaulted to
+    `"seconds"` would be a record asserting its own units on the reader's behalf --
+    indistinguishable from a record that measured them.
     """

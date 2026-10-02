@@ -12,21 +12,24 @@ A run record must never carry a credential. It is designed to be published.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from pydantic import ValidationError
 
 from pcm_fixtures import SAMPLE_RATE, ramp_pcm, slice_at
+from scribe_timeline.analysis.matching import MATCH_RULE
 from scribe_timeline.audio.family import MARKER_TEXT, build_vad_family
 from scribe_timeline.audio.timeline import Clip, compose
 from scribe_timeline.records import (
     BENIGN_EVENT_KEYS,
     CREDENTIAL_KEY_MARKERS,
+    SCHEMA_VERSION,
     EchoedSessionConfig,
     Manifest,
     RawEvent,
     RunRecord,
+    SchemaVersion,
     WordTiming,
 )
 
@@ -89,6 +92,12 @@ def _record(**overrides: object) -> RunRecord:
             WordTiming(text="Zorblax", start_ms=12_200.0, end_ms=12_780.0, logprob=-1.29),
         ),
         "api_key_present": False,
+        # Required by the model, so the fixture states them rather than leaning on a
+        # default. `source_timestamp_unit` is the project's own recorded measurement
+        # and `MATCH_RULE` the rule the recorder applies, so importing both keeps the
+        # fixture from asserting a different measurement than the code does.
+        "match_rule": MATCH_RULE,
+        "source_timestamp_unit": "seconds",
     }
     return RunRecord(**{**defaults, **overrides})  # type: ignore[arg-type]
 
@@ -443,6 +452,31 @@ def test_serialised_record_contains_no_credential_value() -> None:
     assert SECRET not in serialised
     # The benign payload did survive, so this is not passing by dropping data.
     assert "scribe_v2_realtime" in serialised
+
+
+def test_a_record_written_under_another_contract_is_refused() -> None:
+    """A version this code does not implement is a record it must not read.
+
+    The same field names, read under a different contract's rules, is how a unit
+    change turns into a figure that is wrong by a factor and still looks like a
+    timestamp. Failing here names the record; reading it would not.
+    """
+    with pytest.raises(ValidationError, match="schema_version"):
+        _record(schema_version=2)
+
+
+def test_the_pinned_version_is_the_one_the_type_allows() -> None:
+    """The two places the version is written, and they must agree.
+
+    `SCHEMA_VERSION` is what the recorder stamps on a record; `SchemaVersion` is the
+    literal the model validates against. They are written separately because the type
+    checker rejects `Literal[SCHEMA_VERSION]`, and that leaves exactly the kind of
+    drift this project exists to catch: bump the constant and the recorder would write
+    a version every reader then refuses. Compared here so the bump fails here.
+    """
+    assert get_args(SchemaVersion) == (SCHEMA_VERSION,)
+    assert _record().schema_version == SCHEMA_VERSION
+    assert SCHEMA_VERSION == 1
 
 
 def test_record_declares_whether_a_key_was_present() -> None:

@@ -25,6 +25,7 @@ from typing import Any
 import pytest
 
 from scribe_timeline.analysis.compare import ComparisonReport, compare_runs
+from scribe_timeline.analysis.matching import MATCH_RULE
 from scribe_timeline.audio.family import MARKER_TEXT
 from scribe_timeline.audio.timeline import SAMPLE_WIDTH_BYTES  # noqa: F401  (documents PCM16)
 from scribe_timeline.capture.completion import TIMESTAMPED_EVENT
@@ -111,6 +112,8 @@ def _record(condition_id: str, *, repeat: int, marker_ms: float, prior: int) -> 
                 logprob=-1.3,
             ),
         ),
+        match_rule=MATCH_RULE,
+        source_timestamp_unit="seconds",
     )
 
 

@@ -23,6 +23,7 @@ import wave
 import pytest
 
 from pcm_fixtures import SAMPLE_RATE, ramp_pcm, sample_at
+from scribe_timeline.analysis.matching import MATCH_RULE
 from scribe_timeline.audio.timeline import Clip
 from scribe_timeline.records import EchoedSessionConfig, Manifest, RunRecord, Segment
 from scribe_timeline.viewer.audio import RecordAudioMismatch, wav_for_record
@@ -62,6 +63,8 @@ def record(
             sample_rate=echoed_rate,
             include_timestamps=True,
         ),
+        match_rule=MATCH_RULE,
+        source_timestamp_unit="seconds",
     )
 
 

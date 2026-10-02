@@ -20,6 +20,7 @@ import json
 import re
 import sys
 import wave
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -27,6 +28,7 @@ import pytest
 
 from pcm_fixtures import SAMPLE_RATE, ramp_pcm
 from scribe_timeline.analysis.compare import compare_runs
+from scribe_timeline.analysis.matching import MATCH_RULE
 from scribe_timeline.audio.timeline import Clip
 from scribe_timeline.capture.completion import TIMESTAMPED_EVENT
 from scribe_timeline.records import (
@@ -122,6 +124,11 @@ def make_record(
             for payload in commits
             for word in payload
         ),
+        # Both required by the model, so the fixture states them. `seconds` because
+        # the events above hold seconds, and the test asserting the export converts
+        # them is the point of the module.
+        match_rule=MATCH_RULE,
+        source_timestamp_unit="seconds",
     )
 
 
@@ -132,10 +139,27 @@ def commit(*words: tuple[str, float, float]) -> tuple[dict[str, object], ...]:
     )
 
 
-def write_record(directory: Path, record: RunRecord) -> Path:
-    """Write a record the way a runner does: one JSON file, indented."""
-    path = directory / f"{record.run_id}.json"
-    path.write_text(record.model_dump_json(indent=2) + "\n")
+def write_record(
+    directory: Path,
+    record: RunRecord,
+    run_id: str | None = None,
+    *,
+    source_timestamp_unit: str | None = None,
+) -> Path:
+    """Write a record the way a runner does: one JSON file, indented.
+
+    `run_id` and `source_timestamp_unit` override fields on the serialised
+    document, bypassing the models -- so a test can produce the corrupt record the
+    exporter is supposed to refuse, which a well-formed model would not let it
+    build.
+    """
+    document = json.loads(record.model_dump_json())
+    if run_id is not None:
+        document["run_id"] = run_id
+    if source_timestamp_unit is not None:
+        document["source_timestamp_unit"] = source_timestamp_unit
+    path = directory / f"{run_id or record.run_id}.json"
+    path.write_text(json.dumps(document, indent=2) + "\n")
     return path
 
 
@@ -293,6 +317,60 @@ def test_one_unreplayable_record_does_not_cost_the_reader_the_others(
     assert (public / "runs" / "broken.json").exists()
 
 
+def test_a_run_that_lost_its_audio_leaves_no_wav_behind_from_a__earlier_export(
+    public: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that stops being replayable must not keep serving the audio it had.
+
+    The inverse of the stale-file case, and the one a reader would actually be
+    misled by: `has_audio: false` says "there is nothing to play", the page honours
+    it and offers no player -- and a WAV left over from a previous export would sit
+    there anyway, readable by anyone who guessed the URL, describing audio for a
+    record that no longer matches it.
+    """
+    clips = {"marker": clip("marker", 1600)}
+    monkeypatch.setattr(export_viewer, "load_clips", lambda: clips)
+    good = write_record(tmp_path, make_record("run-a"))
+    export_viewer.export([good], public_dir=public)
+    assert (public / "audio" / "run-a.wav").exists()
+
+    # Same record, but the clip it names is no longer the one it was captured with.
+    broken = write_record(tmp_path, make_record("run-a", clip_id="regenerated"))
+    entries = export_viewer.export([broken], public_dir=public)
+
+    assert entries[0]["has_audio"] is False
+    assert not (public / "audio" / "run-a.wav").exists()
+
+
+def test_a_rerun_replaces_its_own_audio_rather_than_leaving_the_old_bytes(
+    public: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The replaced file is gone, and the index cannot disagree with the directory.
+
+    Trivially true given the clear, so asserted together with a WAV that is present
+    and correct for the record that *was* rebuilt -- otherwise "nothing is there"
+    would pass just as well for a bundle that was never written at all.
+    """
+    clips = {"marker": clip("marker", 1600)}
+    monkeypatch.setattr(export_viewer, "load_clips", lambda: clips)
+    paths = [
+        write_record(tmp_path, make_record("run-a")),
+        write_record(tmp_path, make_record("run-b", clip_id="regenerated")),
+    ]
+
+    entries = export_viewer.export(paths, public_dir=public)
+
+    assert {entry["run_id"]: entry["has_audio"] for entry in entries} == {
+        "run-a": True,
+        "run-b": False,
+    }
+    on_disk = {path.name for path in (public / "audio").glob("*.wav")}
+    # Exactly the runs the index says have audio, and nothing else -- which is the
+    # property a published bundle rests on, and what a build would otherwise carry
+    # forward from an earlier export.
+    assert on_disk == {f"{entry['run_id']}.wav" for entry in entries if entry["has_audio"]}
+
+
 def test_regenerated_clips_fail_every_record_rather_than_misreporting_one(
     public: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -335,6 +413,175 @@ def test_an_empty_bundle_is_refused(public: Path) -> None:
     # like a broken page rather than an empty evidence set.
     with pytest.raises(SystemExit, match="no run records"):
         export_viewer.export([], public_dir=public)
+
+
+def test_a_run_dropped_from_the_evidence_leaves_nothing_behind(
+    public: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-exporting a smaller set must not leave the larger set's files in place.
+
+    The bundle a reader is served is whatever is in the directory, and the index is
+    what the page trusts: it is authoritative about which runs exist. A record left
+    from an earlier, larger export is therefore invisible to the page and still
+    published to anyone reading the bytes -- evidence the README does not mention
+    and nothing on the site accounts for.
+    """
+    monkeypatch.setattr(export_viewer, "load_clips", lambda: {"marker": clip("marker", 1600)})
+    first = [write_record(tmp_path, make_record(name)) for name in ("run-a", "run-b")]
+    export_viewer.export(first, public_dir=public)
+    assert (public / "runs" / "run-b.json").exists()
+
+    export_viewer.export([first[0]], public_dir=public)
+
+    assert (public / "runs" / "run-a.json").exists()
+    assert not (public / "runs" / "run-b.json").exists()
+    assert not (public / "audio" / "run-b.wav").exists()
+    index = json.loads((public / "runs.json").read_text())
+    assert [entry["run_id"] for entry in index["runs"]] == ["run-a"]
+
+
+@pytest.mark.parametrize(
+    "when", ["while-moving-aside", "while-creating", "while-writing"]
+)
+def test_an_interrupted_export_leaves_the_previous_bundle_intact(
+    public: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, when: str
+) -> None:
+    """A crash at any point in the swap leaves a working bundle.
+
+    The export renames the old directories aside, creates new ones, and fills them.
+    Each of those steps is interruptible, and the failures worth guarding are the
+    ones that *strand* state rather than raise cleanly:
+
+    * interrupted while moving the old directories aside leaves some of them renamed
+      and some not -- a bundle with half of itself gone, and no handler to put it
+      back, because the interruption happened before there was one;
+    * interrupted while creating leaves the old directories renamed away and none in
+      their place, so the bundle is simply absent;
+    * interrupted while writing leaves a half-written new bundle sitting over the old
+      index, which then describes files that were never finished.
+
+    All three must land in the same place: what the reader had, and nothing else. The
+    last point matters as much as the first -- a renamed copy left inside `public/`
+    would be copied into the published output by the next build, since Vite copies
+    that directory wholesale.
+    """
+    monkeypatch.setattr(export_viewer, "load_clips", lambda: {"marker": clip("marker", 1600)})
+    good = write_record(tmp_path, make_record("run-a"))
+    export_viewer.export([good], public_dir=public)
+
+    # The real implementations, captured before patching: the stubs below have to
+    # reach the originals, and calling the patched attribute would recurse.
+    real_rename, real_mkdir, real_write_text = Path.rename, Path.mkdir, Path.write_text
+
+    # One counter per operation. Keyed on the operation rather than a single running
+    # total so each interruption point reads as "the Nth rename" or "the Nth mkdir",
+    # which stays meaningful if the export grows a third directory.
+    counts = {"rename": 0, "mkdir": 0}
+    #
+    # Both points are chosen to land *after* some state has changed, because an
+    # interruption before the first one is trivially harmless and would pass against
+    # a rollback that did nothing at all:
+    #
+    # * `while-moving-aside` fires on the second rename, so the first directory has
+    #   already been moved out of the way and only the rollback can put it back;
+    # * `while-creating` fires on the second mkdir, so both old directories are
+    #   displaced and one of the new ones exists.
+    fires_on = {"while-moving-aside": ("rename", 2), "while-creating": ("mkdir", 2)}
+
+    def counting_rename(self: Path, target: object) -> Path:
+        counts["rename"] += 1
+        if fires_on.get(when) == ("rename", counts["rename"]):
+            raise KeyboardInterrupt
+        return real_rename(self, target)  # type: ignore[arg-type]
+
+    def counting_mkdir(self: Path, *args: object, **kwargs: object) -> None:
+        counts["mkdir"] += 1
+        if fires_on.get(when) == ("mkdir", counts["mkdir"]):
+            raise KeyboardInterrupt
+        real_mkdir(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    def counting_write_text(self: Path, *args: object, **kwargs: object) -> int:
+        if when == "while-writing" and self.parent == public / "runs":
+            raise KeyboardInterrupt
+        return real_write_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "rename", counting_rename)
+    monkeypatch.setattr(Path, "mkdir", counting_mkdir)
+    monkeypatch.setattr(Path, "write_text", counting_write_text)
+
+    with pytest.raises(KeyboardInterrupt):
+        export_viewer.export([good], public_dir=public)
+
+    monkeypatch.undo()
+
+    index = json.loads((public / "runs.json").read_text())
+    assert [entry["run_id"] for entry in index["runs"]] == ["run-a"]
+    assert (public / "runs" / "run-a.json").exists()
+    assert (public / "audio" / "run-a.wav").exists()
+    assert sorted(path.name for path in public.iterdir()) == [
+        "audio",
+        "comparison.json",
+        "runs",
+        "runs.json",
+    ], "the interrupted export left something behind inside public/"
+
+
+def _write_unreadable(path: Path) -> None:
+    path.write_text("{ not json")
+
+
+def _write_unconvertible(path: Path) -> None:
+    """A record whose timestamps are in a unit this project cannot convert.
+
+    Written past the model on purpose: `source_timestamp_unit` is a free string, so
+    pydantic will hold it, and the refusal has to come from the conversion rather
+    than from validation. That is the whole point -- a unit nobody can convert is a
+    corrupt record, and the boundaries it would contribute are wrong by a factor that
+    still looks like a timeline.
+    """
+    write_record(path.parent, make_record("broken"), source_timestamp_unit="fortnights")
+
+
+#: A way to write one corrupt record. Two, because the exporter can refuse at two
+#: different depths and only the later one is reached after the bundle is disturbed.
+CORRUPTIONS: tuple[Callable[[Path], None], ...] = (_write_unreadable, _write_unconvertible)
+
+
+@pytest.mark.parametrize("corruption", CORRUPTIONS, ids=lambda fn: fn.__name__)
+def test_a_refused_export_leaves_the_working_bundle_intact(
+    public: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    corruption: Callable[[Path], None],
+) -> None:
+    """Whatever refuses, the previous bundle survives it.
+
+    The export clears its directories so nothing stale is published, and a refusal
+    part way through would leave the old index pointing at files that had just been
+    deleted: a bundle that was working, replaced by one that is broken, over a record
+    the reader never asked about. So the pass that can refuse has to finish before
+    anything is cleared.
+
+    Two refusals, because they happen at different depths. An unreadable record fails
+    while the records are being read; an unconvertible timestamp unit fails later,
+    while the commits are being derived -- and a fix that only guarded the first
+    would leave the second clearing the bundle on its way to the same outcome.
+    """
+    monkeypatch.setattr(export_viewer, "load_clips", lambda: {"marker": clip("marker", 1600)})
+    good = write_record(tmp_path, make_record("run-a"))
+    export_viewer.export([good], public_dir=public)
+
+    broken = tmp_path / "broken.json"
+    corruption(broken)
+    with pytest.raises(SystemExit, match=re.escape(broken.name)):
+        export_viewer.export([good, broken], public_dir=public)
+
+    # The bundle a reader had is still a working one: the index, the record, and the
+    # audio it names.
+    index = json.loads((public / "runs.json").read_text())
+    assert [entry["run_id"] for entry in index["runs"]] == ["run-a"]
+    assert (public / "runs" / "run-a.json").exists()
+    assert (public / "audio" / "run-a.wav").exists()
 
 
 # --- The comparison travels with the bundle -----------------------------------

@@ -123,6 +123,9 @@ function stubBundle(
     readonly comparison?: unknown;
     readonly record?: unknown;
     readonly fails?: string;
+    /** A static host answering with something that is not JSON, which is what a
+     *  missing file looks like on several of them. */
+    readonly servesInsteadOfJson?: boolean;
   } = {},
 ) {
   const index = options.index ?? indexJson();
@@ -142,6 +145,16 @@ function stubBundle(
       else {
         const runId = url.replace("runs/", "").replace(".json", "");
         body = options.record ?? recordJson(runId);
+      }
+      if (options.servesInsteadOfJson === true) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => {
+            throw new SyntaxError("Unexpected token '<', \"<!doctype\"... is not valid JSON");
+          },
+        };
       }
       return { ok: true, status: 200, statusText: "OK", json: async () => body };
     }),
@@ -370,6 +383,41 @@ describe("anything that goes wrong is visible", () => {
     render(<App />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/not valid/i);
+  });
+
+  it("names the file when the host serves something that is not JSON", async () => {
+    // A missing file on a static host is often answered with the site's own index
+    // page and a 200. The browser's "Unexpected token '<'" says nothing about which
+    // file was wrong or that the likely cause is a file that is not there, and a
+    // reader who is sent to re-run the capture should not be sent there by a
+    // message about a token.
+    stubBundle({ servesInsteadOfJson: true });
+    render(<App />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/runs\.json/);
+    expect(alert).toHaveTextContent(/did not return JSON/i);
+    // The whole bundle failed, not one run, and the heading says which: a reader
+    // sent to re-run a capture that is not the problem would be chasing the wrong
+    // thing.
+    expect(alert).toHaveTextContent(/bundle cannot be read/i);
+  });
+
+  it("says so when a run's audio cannot be loaded, rather than showing a dead player", async () => {
+    // `has_audio: true` is the exporter's word that the WAV was written. A
+    // deployment that drops the file anyway leaves a control that does nothing when
+    // pressed, which reads as a broken recording rather than a missing file.
+    stubBundle();
+    render(<App />);
+    await screen.findByRole("heading", { name: /vad_0/ });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    const audio = screen.getByLabelText("Run audio");
+    audio.dispatchEvent(new Event("error"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      new RegExp(`audio/${BUNDLE.vad_0[0]}\\.wav`),
+    );
   });
 
   it("withholds a malformed comparison's figures without taking the run down with them", async () => {

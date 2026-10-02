@@ -155,6 +155,30 @@ describe("malformed records fail loudly rather than defaulting to zero", () => {
     ],
     ["a null manifest", (r) => void (r["manifest"] = null)],
     ["an array instead of a record", (r) => void (r["manifest"] = [])],
+    [
+      "a schema version this viewer does not implement",
+      (r) => {
+        r["schema_version"] = 2;
+      },
+    ],
+    [
+      "a non-integer schema version",
+      (r) => {
+        r["schema_version"] = "1";
+      },
+    ],
+    [
+      "no match rule, which would answer which word was measured on the record's behalf",
+      (r) => {
+        delete r["match_rule"];
+      },
+    ],
+    [
+      "no timestamp unit, which would assert the record's own units",
+      (r) => {
+        delete r["source_timestamp_unit"];
+      },
+    ],
   ];
 
   it.each(cases)("rejects %s", (_label, mutate) => {
@@ -182,6 +206,17 @@ describe("malformed records fail loudly rather than defaulting to zero", () => {
     (record["manifest"] as Record<string, unknown>)["markers"] = { Zorblax: -1 };
 
     expect(() => parseRunRecord(record)).toThrow(InvalidRunRecordError);
+  });
+
+  it("names both versions when the record is one it cannot read", () => {
+    // A version it cannot implement is not a detail to shrug at: a later contract
+    // could store timestamps in a different unit, and reading this one's fields
+    // under the other one's rules would draw a whole track that looks like a
+    // timeline and is not one. The message has to say what was refused and why.
+    const record = validRecord() as Record<string, unknown>;
+    record["schema_version"] = 7;
+
+    expect(() => parseRunRecord(record)).toThrow(/schema_version is 7.*implements 1/s);
   });
 });
 
