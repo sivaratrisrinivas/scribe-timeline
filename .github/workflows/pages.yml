@@ -1,0 +1,77 @@
+# Publishes viewer/dist, so the report has one public link that costs nothing to open.
+#
+# The artifact is derived, not captured. `make build` rebuilds the bundle from the
+# committed run records and clips, so this workflow spends no API credit, needs no
+# credential, and cannot publish a capture that only exists on someone's laptop. If
+# the key were present here it would not be used, and nothing reads it.
+#
+# `make check` runs before the deploy rather than beside it. The bundle is evidence
+# and a maintainer's first impression of the project, so it is published only from a
+# commit that passes the whole gate -- which also builds the bundle and runs the
+# tests that read it. A failing check stops the deploy rather than publishing a
+# broken page and leaving the fix for later.
+#
+# Pages serves this from `/<repo>/`, not from `/`. That is why `base: "./"` is set in
+# viewer/vite.config.ts and why tests/test_publication.py exists: a site-absolute
+# asset path works on a dev server and 404s here, which no other check would notice.
+name: Publish the evidence
+
+on:
+  push:
+    branches: [main]
+  # Manual only. Enabling Pages is a one-time repository setting, so this is a
+  # fallback for a re-publish rather than the usual path -- and useful for checking a
+  # change to the build before it reaches main.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. Pages keeps only the latest, so two concurrent runs would
+# race to be it and could leave the older one live.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+
+      - name: Install
+        run: |
+          uv sync --extra dev
+          cd viewer && npm ci
+
+      # The whole gate, and the build that publishes. `make check` runs the export
+      # itself, so the bundle it verifies is the bundle deployed below.
+      - name: Check and build
+        run: make check && make build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: viewer/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
