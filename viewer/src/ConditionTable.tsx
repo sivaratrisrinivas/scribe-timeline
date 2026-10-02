@@ -143,6 +143,8 @@ function Report({
 
   return (
     <>
+      <QuestionAndAnswer report={report} />
+
       <p className="table__rule" data-testid="measurement-rule">
         {report.matchRuleNote}
       </p>
@@ -347,6 +349,47 @@ export function ConditionTable(props: ConditionTableProps) {
  *  One run is not a measurement, but it is the audio and the returned words, and a
  *  reader who came for that should not be told there is nothing here.
  */
+/**
+ * The question, and the answer the analysis gave it.
+ *
+ * The public link promises a maintainer the question, the evidence and the result
+ * within thirty seconds of opening it. The table and the notes below are the evidence
+ * and the result; without these two lines the page opened with a column of deltas and
+ * nothing saying what the deltas were deltas *of*. A reader arriving from a link would
+ * have had a number to puzzle at rather than a finding to judge -- and the whole point
+ * of the link is that they can judge it.
+ *
+ * Both lines are read from the report, not written here. The question names
+ * `claims_source` and `claims_filed` so the credit cannot name one issue while the
+ * claim table below names another, and the answer is `drift_detected`, which is the
+ * analysis's own conclusion rather than a verdict re-decided in the browser.
+ *
+ * The answer is written so it can come out the other way. A finding-shaped decoration
+ * that can only ever confirm is worse than none, because it would survive the report
+ * that contradicted it.
+ */
+function QuestionAndAnswer({ report }: { readonly report: ComparisonReport }) {
+  return (
+    <>
+      <section className="question" aria-labelledby="question-heading">
+        <h3 id="question-heading">The question</h3>
+        <p data-testid="the-question">
+          Does a word&rsquo;s returned timestamp drift as more speech is committed ahead of it
+          under the server&rsquo;s voice activity detection? Reported by{" "}
+          <strong>{report.claimsSource}</strong>, filed {report.claimsFiled}. Those figures were
+          measured independently; this page replays the measurement rather than taking it on
+          trust.
+        </p>
+        <p data-testid="the-answer" className="question__answer">
+          {report.driftDetected
+            ? "On this evidence: drift detected. The marker’s returned timestamp moves with the number of preceding VAD commits, and does not move under manual commits."
+            : "On this evidence: no drift detected. The marker’s returned timestamp does not move with the number of preceding VAD commits."}
+        </p>
+      </section>
+    </>
+  );
+}
+
 function RunList({
   groups,
   selectedRunId,

@@ -297,10 +297,18 @@ describe("the reported claim", () => {
   it("is shown next to the measurement, credited and dated", () => {
     // The finding is a reproduction of someone else's, and a reader has to be able
     // to see both numbers and check who reported which.
+    //
+    // Scoped to this section because the credit now appears twice on the page: once in
+    // the question above the table, where a reader arriving from the public link meets
+    // it first, and once here, beside the figures it is being compared against. Both
+    // render `report.claimsSource`, so they cannot disagree -- but an unscoped
+    // `getByText` no longer has a single element to find, which is what this test
+    // would otherwise report rather than what it means.
     renderTable();
 
-    expect(screen.getByText(/elevenlabs-python#849/)).toBeInTheDocument();
-    expect(screen.getByText(/2026-08-19/)).toBeInTheDocument();
+    const claims = screen.getByRole("note", { name: /against the reported claim/i });
+    expect(within(claims).getByText(/elevenlabs-python#849/)).toBeInTheDocument();
+    expect(within(claims).getByText(/2026-08-19/)).toBeInTheDocument();
     expect(row("vad_1")).toHaveTextContent("+100");
   });
 

@@ -173,6 +173,40 @@ body {
   color: var(--ink-soft);
 }
 
+/*
+ * The question and the answer.
+ *
+ * Above the table and above the measurement rule, because the order is the argument:
+ * what is being asked, what this evidence says about it, then how the figure was
+ * measured, then the figures. A reader who has to pass a wall of numbers to learn what
+ * the numbers are about has been asked to do arithmetic before being told the question.
+ *
+ * The answer is set apart from the question in weight and colour, not in a box. It is a
+ * statement of what the evidence showed, not a call to action, and a badge would imply
+ * it is a verdict about the platform rather than a result about twelve runs.
+ */
+.question {
+  margin: 0 0 1.1rem;
+  max-width: 46rem;
+}
+
+.question h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.question p {
+  margin: 0 0 0.5rem;
+}
+
+.question__answer {
+  font-size: 1.02rem;
+  color: var(--ink);
+}
+
 .table__baseline-line,
 .table__selected {
   margin: 0.6rem 0;

@@ -234,6 +234,78 @@ describe("the page loads the bundle and one run", () => {
   });
 });
 
+describe("the page states the question it answers", () => {
+  // The public link's promise is that a maintainer sees the question, the evidence and
+  // the result within thirty seconds of opening it. The evidence and the result are
+  // the table below, which this page already carried. The question was missing: a
+  // reader landing here from a link would find a table of deltas with nothing saying
+  // what the deltas were deltas *of*, which is a number to be puzzled at rather than a
+  // finding to be judged.
+
+  it("says what is being asked, in the page's own words", async () => {
+    stubBundle();
+    render(<App />);
+
+    // On the words rather than the whole sentence, and with the apostrophe allowed to
+    // be typographic: the page writes a curly `’`, and a test that only matched the
+    // ASCII form would fail against correct prose.
+    expect(await screen.findByTestId("the-question")).toHaveTextContent(
+      /word.?s returned timestamp drift/i,
+    );
+  });
+
+  it("names the report the question comes from, and credits its author", async () => {
+    // Taken from the report rather than hard-coded in the page, so the credit cannot
+    // name one issue while the claim table below it names another.
+    stubBundle();
+    render(<App />);
+
+    const question = await screen.findByTestId("the-question");
+    expect(question).toHaveTextContent("elevenlabs-python#849");
+    expect(question).toHaveTextContent("2026-08-19");
+  });
+
+  it("gives the answer the page's own comparison found", async () => {
+    // The question alone would leave a reader to find the verdict in a table. The
+    // report's `drift_detected` is the analysis's own conclusion, so it is shown rather
+    // than re-decided here.
+    stubBundle();
+    render(<App />);
+
+    expect(await screen.findByTestId("the-answer")).toHaveTextContent(/drift detected/i);
+  });
+
+  it("says the drift did not reproduce when that is what the report found", async () => {
+    // The direction of the claim has to be able to go the other way, or this is a
+    // finding-shaped decoration that can only ever confirm. Driven by the same flag the
+    // analysis sets, so a report that did not reproduce is reported as such.
+    //
+    // `{ report: ... }` because that is the shape `stubBundle` expects; spreading
+    // `reportJson()` at the top level puts the fields beside `report` rather than
+    // inside it, and the document is then refused for carrying an unknown key.
+    stubBundle({ comparison: { report: { ...reportJson(), drift_detected: false } } });
+    render(<App />);
+
+    expect(await screen.findByTestId("the-answer")).toHaveTextContent(/no drift detected/i);
+  });
+
+  it("withholds the question when the report cannot be read", async () => {
+    // A question with no table under it is a promise the page cannot keep. A bundle
+    // whose report will not parse supports no comparison, so it states no question and
+    // no answer -- rather than asking something and showing nothing.
+    //
+    // A malformed *report* rather than a malformed document: the document is parsed
+    // strictly, so a string here fails the whole bundle and the run view never renders
+    // at all. That is a different failure with its own test.
+    stubBundle({ comparison: { report: { conditions: [{ condition_id: "vad_0" }] } } });
+    render(<App />);
+
+    await screen.findByTestId("run-list");
+    expect(screen.queryByTestId("the-question")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("the-answer")).not.toBeInTheDocument();
+  });
+});
+
 describe("switching between strategies and conditions", () => {
   it("moves to the manual control's own run, and says so in the URL", async () => {
     // The control is a check on the VAD family. Being able to get to it in one click
