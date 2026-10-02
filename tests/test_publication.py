@@ -398,3 +398,95 @@ def test_the_workflow_caches_a_lockfile_that_exists() -> None:
         "the deploy installs with something other than `npm ci`, so a runner could "
         "resolve different dependency versions than the tests ran against"
     )
+
+
+# --- The deployed site ----------------------------------------------------------
+
+#: Where the project site is published. Derived from the remote rather than hard-coded,
+#: so a fork's own suite checks its own URL.
+def published_url() -> str | None:
+    remote = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    match = re.search(
+        r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/\s]+?)(?:\.git)?$", remote.stdout.strip()
+    )
+    if remote.returncode != 0 or match is None:
+        return None
+    return f"https://{match.group('owner')}.github.io/{match.group('repo')}/"
+
+
+@pytest.mark.live
+def test_the_published_site_serves_the_page_and_everything_it_asks_for() -> None:
+    """The public link works, checked against the site itself rather than a local copy.
+
+    Every other test here proves the *bundle* is sound. This one proves the deployment
+    is, and it is the only check that can: a build can be correct on disk and still be
+    published broken, because what a browser requests depends on where the site is
+    mounted — a distinction no amount of inspecting local files can settle.
+
+    Live HTTP, so it is skipped rather than failed when there is genuinely no network. A
+    404 is *not* skipped — that is the failure this test exists to catch.
+
+    Marked `live` and excluded from `make check` by default. The gate promises no
+    network, and a promise enforced only by graceful degradation is not a promise: with
+    a proxy pointing nowhere, every request raised and the suite reported a wall of
+    `ConnectionRefused` instead of passing. The marker makes the boundary structural, so
+    "the gate needs no network" is a property of the run rather than of the failure
+    handling.
+
+    Run it when a deployment has just changed:
+
+        make check-live
+    """
+    url = published_url()
+    if url is None:
+        pytest.skip("this checkout has no GitHub remote to derive the site URL from")
+
+    try:
+        status, body = fetch(url)
+    except HTTPError as error:
+        # A 404 is a failure, not an absence. It is the answer Pages gives when a project
+        # site is not enabled, and it is exactly the state this test exists to catch — the
+        # README linking a URL that does not resolve.
+        #
+        # `HTTPError` subclasses `URLError`, so catching `URLError` alone swallows the 404
+        # and skips. The first version did precisely that, and reported "skipped" for a
+        # repository whose public link was broken.
+        raise AssertionError(
+            f"the published site answered {error.code}. The README links it as the one "
+            f"public link, so it has to resolve: enable Pages for this repository, or "
+            f"stop publishing the URL."
+        ) from error
+    except URLError as error:
+        # Genuinely unreachable: no DNS, no route, offline. Not a finding.
+        pytest.skip(f"the published site is not reachable from here: {error}")
+
+    assert status == 200, (
+        f"the published site answered {status}. The README links it as the one public "
+        f"link, so it has to resolve — a 404 there is a report whose front door is shut."
+    )
+
+    html = body.decode()
+    references = references_in(html)
+    assert references, "the published page references nothing, so this test checks nothing"
+
+    for reference in references:
+        absolute = urljoin(url, reference)
+        assert status_of(absolute) == 200, (
+            f"the published page asks for {reference!r}, which resolves to "
+            f"{urlparse(absolute).path} and answered {status_of(absolute)}. The asset "
+            f"is in the bundle but the page requests it at the wrong URL, which is what "
+            f"a site-absolute path does on a project site."
+        )
+
+    # And the three documents the page fetches, resolved the same way.
+    for document in ("runs.json", "comparison.json"):
+        absolute = urljoin(url, document)
+        assert status_of(absolute) == 200, (
+            f"the published site does not serve {document} ({urlparse(absolute).path} "
+            f"answered {status_of(absolute)})"
+        )

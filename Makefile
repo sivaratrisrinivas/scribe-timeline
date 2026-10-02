@@ -1,4 +1,4 @@
-.PHONY: help setup test lint typecheck schema check viewer-test viewer-export viewer build walkthrough fixtures capture matrix
+.PHONY: help setup test check-live lint typecheck schema check viewer-test viewer-export viewer build walkthrough fixtures capture matrix
 
 help:
 	@echo "setup          Take a fresh clone to a working state: dependencies, then the viewer bundle"
@@ -11,6 +11,7 @@ help:
 	@echo "lint           Ruff + mypy + tsc"
 	@echo "schema         Regenerate schema/run-record.schema.json from the models"
 	@echo "check          Everything CI runs (no network, no API key)"
+	@echo "check-live     The tests that reach the network (the published site). No API key, no credit."
 	@echo "fixtures       Generate the speech clips (needs ELEVENLABS_API_KEY, once)"
 	@echo "capture        Stream one condition to Scribe (needs ELEVENLABS_API_KEY)"
 	@echo "matrix         Run the full comparison matrix (needs ELEVENLABS_API_KEY)"
@@ -28,6 +29,15 @@ setup:
 
 test:
 	uv run pytest
+
+# The tests that reach the network, which `check` excludes by design. Nothing here costs
+# API credit: it fetches the published static site, which is free to read.
+#
+# Separate from `check` rather than inside it, because `check`'s promise is that it needs
+# no network, and a promise that depends on the failure handling holding up is not a
+# promise. `-m live` overrides the `not live` default in pyproject.toml.
+check-live:
+	uv run pytest -m live -v
 
 viewer-test:
 	cd viewer && npm run test

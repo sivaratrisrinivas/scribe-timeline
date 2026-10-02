@@ -127,6 +127,7 @@ because its inputs are already committed.
 
 ```sh
 make check         # lint, typecheck, both suites. No network, no API key.
+make check-live    # the published-site checks (the only ones that touch the network)
 make viewer        # serve the viewer locally (no network, no API key)
 make build         # build viewer/dist: a directory of files, hostable as-is
 make walkthrough   # re-record the ~72-second video from the built viewer
@@ -434,8 +435,11 @@ Four test modules guard the promises rather than the code:
   evidence and nothing stale, that its comparison is the published one, and that it loads
   nothing from another origin.
 - `tests/test_publication.py` — that the bundle survives being mounted below the domain
-  root, and that the Pages workflow gates the deploy on `make check` and cannot spend API
-  credit.
+  root, that the Pages workflow gates the deploy on `make check` and cannot spend API
+  credit, and — under `make check-live`, since it is the one test that touches the
+  network — that the published site actually serves its page and everything the page asks
+  for. A 404 there fails rather than skipping: that is the state the link must never be
+  in.
 - `tests/test_report.py` — that this README's figures are the evidence's, that its
   required sections are present, that it states what would falsify the finding, and that
   the rerun command it publishes actually runs.

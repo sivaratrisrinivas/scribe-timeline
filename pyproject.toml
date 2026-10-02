@@ -26,6 +26,15 @@ packages = ["src/scribe_timeline"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# `make check` promises no network, so the default run excludes tests that need one.
+#
+# An `addopts` default rather than a flag on the make targets, because the promise has to
+# hold for a bare `pytest` too — otherwise the offline claim would depend on remembering
+# to pass a switch. `make check-live` passes `-m live`, which overrides this.
+addopts = "-m 'not live'"
+markers = [
+  "live: reaches the network; excluded from the offline gate, run by `make check-live`",
+]
 
 [tool.mypy]
 python_version = "3.10"
