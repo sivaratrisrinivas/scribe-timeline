@@ -27,10 +27,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 README = REPO_ROOT / "README.md"
 COMPARISON = REPO_ROOT / "evidence" / "comparison.json"
-WALKTHROUGH = REPO_ROOT / "docs" / "walkthrough.webm"
 
 #: Issue #8's required sections, as heading text.
 REQUIRED_SECTIONS = (
@@ -345,7 +346,6 @@ def test_the_simplifications_are_the_ones_the_issue_names() -> None:
     of these in passing across five paragraphs and still leave a reader unsure what is
     being claimed. Hence one test, five assertions.
     """
-    text = readme().lower()
     section = section_text("Simplifications")
 
     expectations = {
@@ -372,26 +372,43 @@ def test_the_simplifications_are_the_ones_the_issue_names() -> None:
         f"the Simplifications section does not state: {missing}. A report that bounds "
         "its claim nowhere is an unbounded claim."
     )
-    assert text  # the whole document was read, not an empty string
 
 
 def section_text(title: str) -> str:
-    """The body of one `##` section, up to the next heading of the same level.
+    """The body of one `##` section, up to the next `##`."""
+    return _section_text(title, "##")
 
-    Scoped rather than read whole-document, because a test that passes on a phrase from
-    a neighbouring section is not checking the section it names. Returns everything from
-    the heading to the next `##`, which is what "stated in this section" means for a
-    report laid out as a flat list of sections.
+
+def subsection_text(title: str) -> str:
+    """The body of one `###` section, up to the next heading of the same or higher level."""
+    return _section_text(title, "###")
+
+
+def _section_text(title: str, prefix: str) -> str:
+    """The body of one section, up to the next heading of the same or a higher level.
+
+    Scoped rather than read whole-document, because a test that passes on a phrase from a
+    neighbouring section is not checking the section it names. For a `###` the terminator
+    is the next `###` *or* `##`, so a subsection cannot absorb the rest of its parent.
+
+    `inside` is committed before the terminator check, which is the order that matters:
+    a heading whose own text matches must open the section rather than close it.
     """
+    own = re.compile(rf"{re.escape(prefix)} +(.*)")
+    outer = re.compile(r"#+ +(.*)")
+
     lines = readme().splitlines()
     collected: list[str] = []
     inside = False
     for line in lines:
-        if re.fullmatch(r"## +(.*)", line.strip()):
+        heading = own.fullmatch(line.strip())
+        if heading is not None:
             if inside:
                 break
-            inside = line.strip()[3:].strip().lower().startswith(title.lower())
+            inside = heading.group(1).strip().lower().startswith(title.lower())
             continue
+        if inside and outer.fullmatch(line.strip()) is not None:
+            break
         if inside:
             collected.append(line)
     return "\n".join(collected)
@@ -422,17 +439,22 @@ def test_the_report_says_what_would_falsify_it() -> None:
     )
 
 
-def test_the_rerun_command_is_published_and_works() -> None:
-    """The exact command, verified by running it.
+@pytest.fixture(scope="module")
+def rerun() -> str:
+    """The published rerun command's output, executed once for the whole module.
 
-    Not pattern-matched. The issue requires the rerun command to be published, and the
-    only way to know a published command works is to run it — a command that no longer
-    matches the runner's arguments would leave a reader copying something that fails.
+    The README publishes a command and the report's central promise is that running it
+    reproduces the published figures. So it is run here -- once, with no credential in
+    the environment, which is also how the "free to re-derive" claim gets checked.
 
-    Run against the committed evidence with no credential in the environment, so it also
-    re-checks the claim that re-deriving the report costs nothing.
+    Module-scoped rather than per-test because the previous version ran the whole matrix
+    twice, in two near-identical blocks, to answer two questions one execution answers:
+    does it run, and does it print these numbers. Reading twelve run records and printing
+    a comparison is cheap, but paying for it twice because the assertion could not be
+    shared is the kind of duplication that rots -- the two copies drifted, and only one
+    of them got the credential-stripping `env`.
     """
-    match = re.search(r"make matrix ARGS=\"(--from-saved [^\"]+)\"", readme())
+    match = re.search(r'make matrix ARGS="(--from-saved [^"]+)"', readme())
     assert match is not None, (
         "the README publishes no exact rerun command; the issue requires one"
     )
@@ -440,20 +462,27 @@ def test_the_rerun_command_is_published_and_works() -> None:
     # The glob is expanded here rather than passed through. A reader types the command
     # into a shell, where `evidence/runs/*.json` becomes twelve paths before the runner
     # sees it; `subprocess` with an argument list does no expansion, so forwarding the
-    # literal glob made the runner report "no such run record(s)" and this test failed
-    # against a command that works exactly as published. `glob.glob` is what the shell
-    # would have done.
+    # literal glob made the runner report "no such run record(s)" and this failed against
+    # a command that works exactly as published. `glob.glob` is what the shell would do.
     raw = match.group(1).split()
     arguments: list[str] = []
+    empty: list[str] = []
     for part in raw:
-        if "*" in part:
-            arguments.extend(sorted(glob.glob(str(REPO_ROOT / part))))
-        else:
+        if "*" not in part:
             arguments.append(part)
+            continue
+        matched = sorted(glob.glob(str(REPO_ROOT / part)))
+        # Recorded per pattern rather than inferred from the final argument count, which
+        # would prove that *some* glob matched without saying which -- and the previous
+        # version compared lengths while naming a loop variable that had outlived its
+        # loop, so the failure message reported whichever part happened to be last.
+        if not matched:
+            empty.append(part)
+        arguments.extend(matched)
 
-    assert len(arguments) > len(raw), (
-        f"the published pattern {part!r} matched nothing; the rerun command would "
-        "report no run records"
+    assert empty == [], (
+        f"the published pattern(s) {empty} matched no run records, so the rerun command "
+        f"would report nothing. Command was: {raw}"
     )
 
     result = subprocess.run(
@@ -469,59 +498,55 @@ def test_the_rerun_command_is_published_and_works() -> None:
     assert result.returncode == 0, (
         f"the published rerun command failed:\n{result.stdout[-800:]}\n{result.stderr[-800:]}"
     )
-    assert "manual" in result.stdout.lower(), (
-        "the rerun produced no comparison output"
+    return result.stdout
+
+
+def test_the_published_rerun_command_runs(rerun: str) -> None:
+    """The exact command in the README works, with no account.
+
+    Run, not pattern-matched. The issue requires the rerun command to be published, and
+    the only way to know a published command works is to run it -- a command that no
+    longer matched the runner's arguments would leave a reader copying something that
+    fails. The absence of `ELEVENLABS_API_KEY` from the environment is part of the
+    assertion: this is also what backs "re-derivable for nothing".
+    """
+    assert "manual" in rerun.lower(), (
+        "the rerun produced no comparison output; a command that ran and printed nothing "
+        "is not a working rerun"
     )
 
 
-def test_the_rerun_derives_the_figures_the_readme_quotes() -> None:
+def test_the_rerun_derives_the_figures_the_readme_quotes(rerun: str) -> None:
     """The published command reproduces this README's numbers, not merely some numbers.
 
-    The check above proves the command runs. This proves it is *this* command: the
-    output is re-derived from the committed evidence and its deltas are compared against
-    the table in the README. A command that ran and printed a different figure would
-    satisfy the first test and fail the report's actual promise, which is that a reader
-    can check the published numbers.
+    The check above proves the command runs. This proves it is *this* command: the output
+    is re-derived from the committed evidence and its deltas compared against the figures
+    the README publishes. A command that ran and printed a different figure would satisfy
+    the first test and fail the report's actual promise.
     """
-    report = comparison()
-    raw = re.search(r"make matrix ARGS=\"(--from-saved [^\"]+)\"", readme())
-    assert raw is not None, "the README publishes no exact rerun command"
-
-    arguments: list[str] = []
-    for part in raw.group(1).split():
-        if "*" in part:
-            arguments.extend(sorted(glob.glob(str(REPO_ROOT / part))))
-        else:
-            arguments.append(part)
-
-    result = subprocess.run(
-        ["uv", "run", "python", "-m", "scribe_timeline.capture.matrix", *arguments],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        env={key: value for key, value in os.environ.items() if "ELEVENLABS" not in key},
-    )
-    assert result.returncode == 0, result.stderr[-500:]
-
-    for entry in report["conditions"]:
+    for entry in comparison()["conditions"]:
         delta = entry["delta_vs_anchor_ms"]
         if delta is None:
             continue
         rendered = f"{delta:+.1f}"
-        assert rendered in result.stdout, (
+        assert rendered in rerun, (
             f"re-running the published command produced no {entry['condition_id']} "
             f"delta of {rendered} ms, so it does not reproduce the figure the README "
             f"publishes"
         )
 
 
-def test_the_setup_command_is_published_and_is_the_only_one_needed() -> None:
-    """`git clone`, then `make setup`, then the project works.
+def test_the_readme_publishes_clone_then_setup() -> None:
+    """`git clone`, then `make setup`.
 
-    The claim is checked as two halves: the README names both commands, and `make setup`
-    is what a fresh clone needs. Verified by the existing suite from a clean checkout —
-    this asserts the README says it, not that setup works, which would mean running
-    setup here inside the gate.
+    Named for what it asserts, which is that the README names both commands in the order
+    a reader would run them. The earlier name claimed "the only one needed", which this
+    test cannot check: whether `make setup` alone is sufficient is a property of the
+    Makefile, and asserting it here would mean running setup from inside the gate.
+
+    What backs the stronger claim is elsewhere: `tests/test_setup_contract.py` holds the
+    Makefile's ordering rules, and the whole suite passing from a fresh checkout is what
+    demonstrates it. This only holds the README to saying so.
     """
     text = readme()
 
@@ -575,21 +600,142 @@ def test_the_public_link_is_the_pages_url_for_this_repository() -> None:
     )
 
 
-def test_the_walkthrough_is_linked_and_the_file_is_committed() -> None:
-    """The 75-second walkthrough, linked by a path that resolves.
+def test_the_report_states_the_one_figure_it_could_not_reproduce() -> None:
+    """The +9 ms floor is named, and the disagreement with it is not hidden.
 
-    The walkthrough itself is guarded in `test_walkthrough.py`, which also checks its
-    length and its beats. What is checked here is that the report points at it, since a
-    recording nothing links to is not part of a report.
+    The spec behind this work singles the reported +9 ms zero-commit floor out as the
+    figure that matters most — a constant baseline shift is a different and stronger
+    finding than per-commit drift. This rerun measures +200 ms for the same quantity, and
+    that disagreement is unresolved.
+
+    A report that reproduces a finding cleanly has no such passage. One that does not, and
+    does not say so, is the failure mode this project is built against: a missing value
+    quietly rendered as agreement. So the README is required to name both figures, and to
+    say plainly that they disagree.
     """
-    references = re.findall(r"\]\((docs/[^)]+\.webm)\)", readme())
-
-    assert references, (
-        "the README links no walkthrough; the 75-second walkthrough is a required part "
-        "of the report"
+    report = comparison()
+    context = report["context"]
+    anchor_id = report["anchor_condition_id"]
+    anchor = next(
+        entry for entry in context["conditions"] if entry["condition_id"] == anchor_id
     )
-    for reference in references:
-        assert (REPO_ROOT / reference).exists(), f"the README links {reference}, which is missing"
+    measured_floor = anchor["insertion_point_gap_ms"]
+    reported_floor = report["reporter_claimed_offset_ms"]["vad_0"]
+
+    assert reported_floor != measured_floor, (
+        "this test is about an unresolved disagreement, and the two floors now agree — "
+        "if that is real, the README's discussion of it needs rewriting"
+    )
+
+    section = section_text("The +9 ms floor").lower()
+    if not section:
+        # `###` rather than `##`: this passage is a subsection of Results, and reading it
+        # at the wrong level would return the whole document and quietly pass every
+        # assertion below.
+        section = subsection_text("The +9 ms floor").lower()
+    assert section, (
+        f"the README has no section on the reported {reported_floor:+,.0f} ms floor. "
+        f"This run measured {measured_floor:+,.0f} ms for the same quantity and does not "
+        "reconcile the two."
+    )
+    assert f"{measured_floor:+,.0f}" in section, (
+        f"the section does not state this project's own figure ({measured_floor:+,.0f} ms)"
+    )
+    assert re.search(r"disagree|does not reproduce|not reproduce", section), (
+        "the section states both numbers without saying they disagree"
+    )
+    assert re.search(r"open|not resolved|not obviously a contradiction", section), (
+        "the section must not present the disagreement as settled"
+    )
+
+
+def test_the_report_does_not_overstate_the_per_commit_step() -> None:
+    """No figure is claimed as the per-commit step that no condition measures.
+
+    The evidence measures +100 ms over one preceding commit and +180 ms over two. Neither
+    is a measurement of a per-commit step; dividing one by its commit count is arithmetic
+    on a measurement, and the two give different answers -- 100 ms and 90 ms.
+
+    So a bare "100 ms per commit" is not a figure this evidence holds, and asserting
+    "about 100 ms per preceding commit" without saying where it comes from overstates
+    what was measured. Required instead: the two measured deltas, and the inference marked
+    as one.
+    """
+    report = comparison()
+    deltas = {
+        entry["condition_id"]: entry["delta_vs_anchor_ms"]
+        for entry in report["conditions"]
+        if entry["delta_vs_anchor_ms"] is not None and entry["commit_strategy"] == "vad"
+    }
+
+    opening = readme().split("## Problem", 1)[0]
+
+    assert re.search(r"per commit|per preceding", opening, re.IGNORECASE), (
+        "the opening paragraph no longer describes the finding per commit at all"
+    )
+
+    # Per sentence, not whole-paragraph. A whole-document hedge check passes on any
+    # hedging word anywhere in the opening — and "re-derived from the saved run records"
+    # was doing exactly that, which left "roughly 100 ms per preceding commit" able to
+    # stand unqualified in the sentence before it.
+    hedge = re.compile(r"suggest|infer|arithmetic|divide|per-commit step", re.IGNORECASE)
+    overstated: list[str] = []
+    for sentence in re.split(r"(?<=[.!?])\s+", " ".join(opening.split())):
+        per_commit = r"\b(?:roughly|about|approximately)\s+[\d.]*\s*ms\s+per\b"
+        if not re.search(per_commit, sentence, re.IGNORECASE):
+            continue
+        if hedge.search(sentence) is None:
+            overstated.append(sentence.strip())
+
+    assert overstated == [], (
+        "the opening states a per-commit figure without marking it as arithmetic on the "
+        f"measured deltas: {overstated}. The evidence holds +100 ms over one preceding "
+        "commit and +180 ms over two; neither is a measurement of a per-commit step."
+    )
+
+    # And the measured deltas it rests on must be stated outright, not only implied.
+    for condition_id, delta in deltas.items():
+        assert f"{delta:+,.0f} ms" in opening, (
+            f"the opening does not state {condition_id}'s measured {delta:+,.0f} ms"
+        )
+
+
+def test_the_report_does_not_claim_setup_needs_no_network() -> None:
+    """`make setup` fetches dependencies, so the report must not say it needs no network.
+
+    An earlier version of this README claimed `make setup` reached a working state with
+    "no account, no key, no network" — and `make setup` runs `uv sync` and `npm install`,
+    both of which resolve over the network. Every other offline claim in the report is
+    true; this one was not, and a reader following it on a plane would have found out at
+    the first command.
+
+    The accurate claim is narrower and still worth making: no account and no API key,
+    and offline from then on.
+    """
+    # Whitespace collapsed, because the README is hard-wrapped and "No\naccount" is the
+    # same sentence as "No account". Matching across a line break is not a distinction
+    # worth making; the phrase either is or is not in the section.
+    section = " ".join(section_text("Reproduce").lower().split())
+
+    # "no network" is fine where it qualifies a *specific* offline command. It is not
+    # fine where it qualifies setup, which installs dependencies. Judged per sentence,
+    # since the README is wrapped and a clause can straddle a line break.
+    for sentence in re.split(r"(?<=[.!?])\s+", section):
+        if "no network" not in sentence and "offline" not in sentence:
+            continue
+        assert not re.search(r"\bmake setup\b|\bsetup\b", sentence), (
+            f"the Reproduce section claims no network in a sentence about setup: "
+            f"{sentence!r}. `uv sync` and `npm install` both fetch over the network."
+        )
+
+    assert re.search(r"no account", section), (
+        "the Reproduce section no longer says setup needs no account, which is true and "
+        "is the half of the claim worth making"
+    )
+    assert re.search(r"needs? network|fetch|resolve", section), (
+        "the Reproduce section never says setup needs network at all. Silently dropping "
+        "the claim is not the same as correcting it."
+    )
 
 
 def test_the_report_does_not_claim_frequency_severity_or_scope() -> None:

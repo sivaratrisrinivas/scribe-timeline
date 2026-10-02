@@ -344,11 +344,6 @@ export function ConditionTable(props: ConditionTableProps) {
   );
 }
 
-/** The runs on offer, shown even when there is no comparison to put them in.
- *
- *  One run is not a measurement, but it is the audio and the returned words, and a
- *  reader who came for that should not be told there is nothing here.
- */
 /**
  * The question, and the answer the analysis gave it.
  *
@@ -367,29 +362,34 @@ export function ConditionTable(props: ConditionTableProps) {
  * The answer is written so it can come out the other way. A finding-shaped decoration
  * that can only ever confirm is worse than none, because it would survive the report
  * that contradicted it.
+ *
+ * Entities are written as `&rsquo;` throughout, including inside the answer strings, so
+ * the apostrophe renders the same whether the browser is reading markup or a JS string.
  */
 function QuestionAndAnswer({ report }: { readonly report: ComparisonReport }) {
   return (
-    <>
-      <section className="question" aria-labelledby="question-heading">
-        <h3 id="question-heading">The question</h3>
-        <p data-testid="the-question">
-          Does a word&rsquo;s returned timestamp drift as more speech is committed ahead of it
-          under the server&rsquo;s voice activity detection? Reported by{" "}
-          <strong>{report.claimsSource}</strong>, filed {report.claimsFiled}. Those figures were
-          measured independently; this page replays the measurement rather than taking it on
-          trust.
-        </p>
-        <p data-testid="the-answer" className="question__answer">
-          {report.driftDetected
-            ? "On this evidence: drift detected. The marker’s returned timestamp moves with the number of preceding VAD commits, and does not move under manual commits."
-            : "On this evidence: no drift detected. The marker’s returned timestamp does not move with the number of preceding VAD commits."}
-        </p>
-      </section>
-    </>
+    <section className="question" aria-labelledby="question-heading">
+      <h3 id="question-heading">The question</h3>
+      <p data-testid="the-question">
+        Does a word&rsquo;s returned timestamp drift as more speech is committed ahead of it under
+        the server&rsquo;s voice activity detection? Reported by{" "}
+        <strong>{report.claimsSource}</strong>, filed {report.claimsFiled}. Those figures were
+        measured independently; this page replays the measurement rather than taking it on trust.
+      </p>
+      <p data-testid="the-answer" className="question__answer">
+        {report.driftDetected
+          ? "On this evidence: drift detected. The marker\u2019s returned timestamp moves with the number of preceding VAD commits, and does not move under manual commits."
+          : "On this evidence: no drift detected. The marker\u2019s returned timestamp does not move with the number of preceding VAD commits."}
+      </p>
+    </section>
   );
 }
 
+/** The runs on offer, shown even when there is no comparison to put them in.
+ *
+ *  One run is not a measurement, but it is the audio and the returned words, and a
+ *  reader who came for that should not be told there is nothing here.
+ */
 function RunList({
   groups,
   selectedRunId,

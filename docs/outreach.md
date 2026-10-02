@@ -47,12 +47,13 @@ runnable materials, and they should hear about it from the person who built on i
 > an independent diagnostic, and reproduced it. Your finding is the one that made sense
 > of it; this just adds runnable materials and dated evidence.
 >
-> Measured 2026-10-02, four conditions × three repeats: the marker word's returned
-> timestamp moved **+100 ms** with one preceding VAD commit and **+180 ms** with two,
-> against your reported +109 and +209. Returned timestamps land on 20 ms steps, so both
-> are within one step of yours. The +180 is the interesting bit — dividing it by two
-> *suggests* the step is nearer 90 ms than 100, though that is my arithmetic on two
-> measurements rather than something the run measures directly.
+> Measured 2026-10-02 on synthetic audio, one model, real-time pacing: four conditions
+> × three repeats. The marker word's returned timestamp moved **+100 ms** with one
+> preceding VAD commit and **+180 ms** with two, against your reported +109 and +209.
+> Returned timestamps land on 20 ms steps, so both are within one step of yours. The
+> +180 is the interesting bit — dividing it by two *suggests* the step is nearer 90 ms
+> than 100, though that is my arithmetic on two measurements rather than something the
+> run measures directly.
 >
 > The part I'd flag as yours: `manual_2` played byte-identical audio to `vad_2` with the
 > same commit count and came back at **+0 ms**, so the offset tracks VAD's triggering
@@ -81,61 +82,28 @@ Under the character limit, one claim, one link. No thread.
 > One marker word, identical bytes and position, only the preceding commits vary:
 > +100 ms at one, +180 ms at two. Same audio under manual commits: +0 ms.
 >
-> 12 runs, every repeat identical. Raw events committed; rerun costs nothing:
+> 12 runs, every repeat identical. Synthetic audio, one model, one language, controlled
+> pacing — and no claim about production prevalence: this is a controlled experiment,
+> not a measurement of how often it happens.
+> Raw events committed; rerun costs nothing:
 > https://sivaratrisrinivas.github.io/scribe-timeline/
 
-## X — the alternative, if the first reads as a complaint
+### Two drafts, not four
 
-Softer, and drops the numbers to a single figure. Use one or the other, never both.
+Issue #8 asks for "the two messages that point at it", and this file originally carried
+four: a second X variant that dropped the numbers, and a full comment for the
+[elevenlabs-python#849](https://github.com/elevenlabs/elevenlabs-python/issues/849)
+thread. Both are gone.
 
-> Independent check of a reported Scribe Realtime behaviour change
-> (elevenlabs-python#849, credited to @wujin941005).
->
-> Same marker word, same sample position, varying only how many commits precede it. The
-> returned timestamp moves under VAD and does not move under manual commits.
->
-> Evidence and rerun command, no account needed:
-> https://sivaratrisrinivas.github.io/scribe-timeline/
+The comment draft is out of scope on the parent spec's own terms — issue #1 lists
+"publishing to, or filing against, the upstream repository" under Out of Scope — and
+posting to someone's issue tracker is visible to their employer and their customers,
+which is a decision for them rather than for a drafting checklist. The alternative X
+post was cut because two variants of the same message is a way to send both and pick
+which one lands better.
 
-## Comment — for the issue thread, if you decide to post there
-
-The spec lists filing upstream as out of scope, so this is drafted and **not posted**.
-Decide separately whether to post at all; posting to someone's issue tracker is visible
-to their employer and their customers.
-
-> Independent reproduction attempt for [elevenlabs-python#849](https://github.com/elevenlabs/elevenlabs-python/issues/849),
-> for anyone who wants to check it.
->
-> I reproduced the drift described here and built a viewer for the captured runs.
-> Crediting @wujin941005 as the originator — this adds runnable materials and dated
-> evidence, not a new observation.
->
-> Measured 2026-10-02, `scribe_v2_realtime`, synthetic audio, real-time pacing, four
-> conditions × three repeats:
->
-> | condition | strategy | preceding commits | marker returned | delta vs anchor |
-> | --- | --- | --- | --- | --- |
-> | `vad_0` | VAD | 0 | 12,200 ms | — (anchor) |
-> | `vad_1` | VAD | 1 | 12,300 ms | +100 ms |
-> | `vad_2` | VAD | 2 | 12,380 ms | +180 ms |
-> | `manual_2` | manual | 2 | 12,200 ms | +0 ms |
->
-> The reported offsets (+9 / +109 / +209 ms) are stated against the clip's insertion
-> point, which is a different quantity from a delta between conditions; only the step is
-> comparable. Measured steps are +100 and +180 against claimed +100 and +200, and
-> returned timestamps land on 20 ms multiples across all twelve runs, so both are within
-> one quantisation step.
->
-> The control is the part I'd point at: `manual_2` is byte-identical audio to `vad_2`
-> with the same number of preceding commits, differing only in who chose the cut points.
-> It did not move.
->
-> Raw events committed, rerun needs no account:
-> <https://sivaratrisrinivas.github.io/scribe-timeline/>
->
-> Simplifications: one model, one language, synthetic audio, controlled streaming. No
-> claim about production prevalence — twelve runs of one synthetic word cannot support
-> one, and I am not making it.
+**If you want either, write it as a fresh decision.** Do not restore them from this
+file's history.
 
 ---
 

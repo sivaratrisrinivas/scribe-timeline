@@ -112,23 +112,41 @@ def test_the_recording_drives_the_real_bundle_over_http() -> None:
     is the only arrangement in which the recording is evidence: a hand-built HTML mock
     would show a comparison table that never existed, and would keep showing it after
     the page changed.
-    """
-    body = script()
 
-    assert "viewer" in body and "dist" in body, (
-        "the recording script does not read viewer/dist, so it is not recording the "
-        "published bundle"
+    Asserted against *executable* lines, with comments and docstrings stripped. The
+    earlier version searched the whole file for "playwright" and "dist", both of which
+    appear in this script's own prose -- so it would have passed with the browser launch
+    and the bundle read both deleted, leaving a script that records nothing.
+    """
+    code = executable(script())
+
+    assert re.search(r"""require\(\s*["']node:module["']""", code) or "createRequire" in code, (
+        "the script does not resolve Playwright, so it cannot drive a browser"
     )
-    assert "playwright" in body.lower(), (
-        "the recording script does not drive a browser, so it is not recording the "
-        "real page"
+    assert re.search(r"""\.launch\(\s*\)""", code), (
+        "the script never launches a browser; without one it records nothing"
     )
-    # A subpath, because that is how Pages mounts it, and a page that only works at
-    # the domain root would record as a blank frame.
-    assert "/scribe-timeline/" in body, (
+    assert re.search(r"""["']viewer["']\s*,\s*["']dist["']""", code) or '"dist"' in code, (
+        "the script does not read viewer/dist, so it is not recording the published bundle"
+    )
+    # A subpath, because that is how Pages mounts it, and a page that only works at the
+    # domain root would record as a blank frame.
+    assert "/scribe-timeline/" in code, (
         "the recording script does not mount the bundle under a subpath, so it would "
         "record the page succeeding where Pages would 404 it"
     )
+
+
+def executable(source: str) -> str:
+    """The script's own code: no comments, no docstrings.
+
+    A guard that reads a file's prose is not guarding the file's behaviour. String
+    literals are left alone, since those *are* behaviour here -- the mount path and the
+    comparison selectors are both passed as strings.
+    """
+    without_block_comments = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    without_line_comments = re.sub(r"(?m)^\s*//.*$", "", without_block_comments)
+    return re.sub(r"(?m)^\s*\*.*$", "", without_line_comments)
 
 
 def test_every_required_beat_is_named_in_the_script() -> None:

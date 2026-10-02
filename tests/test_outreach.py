@@ -67,11 +67,22 @@ def drafts() -> dict[str, str]:
 
 
 def quoted_drafts() -> dict[str, str]:
+    """The drafted messages, keyed by the heading each sits under.
+
+    Exactly two, and the count is asserted rather than assumed. Issue #8 asks for "the
+    two messages that point at it"; this file previously carried four, including a
+    comment for the upstream issue thread that the parent spec lists under Out of Scope.
+    The first version of this helper only checked `>= 3`, so it would have accepted that
+    creep and blocked the correction that removed it.
+    """
     found = {title: body for title, body in drafts().items() if body.strip()}
-    assert len(found) >= 3, (
-        f"expected several drafted messages, found {sorted(found)}. The outreach copy is "
-        "meant to be ready to send, not a set of notes."
+
+    assert len(found) == 2, (
+        f"expected exactly two drafted messages — a DM to the reporter and one X post — "
+        f"but found {sorted(found)}. A third would be scope this issue does not ask for."
     )
+    assert any("DM" in title for title in found), f"no DM to the reporter: {sorted(found)}"
+    assert any("X" in title for title in found), f"no X post: {sorted(found)}"
     return found
 
 
@@ -84,44 +95,53 @@ def test_the_outreach_copy_exists_and_is_marked_unsent() -> None:
     )
 
 
+def _permitted_figures(report: dict[str, Any]) -> set[str]:
+    """Every millisecond figure the evidence holds, in every spelling a draft may use.
+
+    Both the signed and unsigned form of each value are accepted, because "12,200 ms"
+    and "+180 ms" are both legitimate ways to write a figure and neither changes the
+    claim. What is *not* accepted is a sign that contradicts the evidence: the earlier
+    version stripped signs before comparing, so a draft claiming `-180 ms` passed against
+    evidence holding `+180 ms` — a reversal of direction read as a formatting difference.
+    """
+    spellings: set[str] = set()
+
+    def add(value: float) -> None:
+        spellings.add(f"{value:+,.0f}")
+        spellings.add(f"{value:,.0f}")
+
+    for entry in report["conditions"]:
+        add(entry["median_marker_ms"])
+        # The anchor's delta is `null`, and there is no delta for a condition measured
+        # against itself — which is exactly why the report withholds one rather than
+        # publishing a zero.
+        delta = entry["delta_vs_anchor_ms"]
+        if delta is not None:
+            add(delta)
+    for offset in report["reporter_claimed_offset_ms"].values():
+        add(offset)
+    add(report["timestamp_quantum_ms"])
+
+    return spellings
+
+
 def test_every_millisecond_figure_in_a_draft_is_one_the_evidence_holds() -> None:
     """No draft quotes a measurement that does not exist.
 
-    Every `±N ms` in the copy must be a figure in the published report — a measured
+    Every `±N ms` in the copy must be a figure the published report holds — a measured
     delta, a median, the reported claim's own offsets, or the tolerance quantum. That
-    list is closed on purpose: a figure outside it is a figure nobody measured, which is
+    list is closed on purpose: a figure outside it is one nobody measured, which is
     exactly what a DM should not contain.
+
+    One figure is permitted that the evidence does not hold: the ~90 ms per-commit step
+    the DM infers from +180 over two commits. It is arithmetic, not a measurement, and no
+    condition measures a per-commit step directly. Allowed only because the draft hedges
+    it in the same sentence, which is asserted separately — so an author adding a second
+    inferred figure has to come back here and argue for it deliberately, rather than
+    slipping an arithmetic result into a message nobody re-derives.
     """
-    report = comparison()
+    permitted = _permitted_figures(comparison())
 
-    permitted: set[str] = set()
-    for entry in report["conditions"]:
-        permitted.add(f"{entry['median_marker_ms']:,.0f}")
-        permitted.add(f"{entry['median_marker_ms']:.0f}")
-        # The anchor's delta is `null`, and formatting `None` raises rather than
-        # producing a figure -- there is no delta for a condition measured against
-        # itself, which is exactly why the report withholds one.
-        delta = entry["delta_vs_anchor_ms"]
-        if delta is not None:
-            permitted.add(f"{delta:+,.0f}")
-            permitted.add(f"{delta:.0f}")
-    for offset in report["reporter_claimed_offset_ms"].values():
-        permitted.add(f"{offset:+,.0f}")
-        permitted.add(f"{offset:.0f}")
-    permitted.add(f"{report['timestamp_quantum_ms']:.0f}")
-
-    # `manual_2`'s +0 is written with an explicit sign; keep both spellings.
-    permitted.add("+0")
-    permitted.add("0")
-
-    # One figure is permitted that the evidence does not hold: the ~90 ms per-commit
-    # step the DM infers from +180 over two commits. It is arithmetic, not a
-    # measurement, and no condition measures a per-commit step directly.
-    #
-    # Allowed only because the draft hedges it in the same sentence — checked below.
-    # The point of the closed list is that adding a *second* inferred figure fails here,
-    # so an author has to come back and argue for it deliberately rather than slipping
-    # an arithmetic result into a DM nobody re-derives.
     inferred = {"90"}
     hedge = re.compile(r"suggest|infer|arithmetic|not .{0,30}measures directly", re.IGNORECASE)
 
@@ -129,12 +149,12 @@ def test_every_millisecond_figure_in_a_draft_is_one_the_evidence_holds() -> None
     unhedged: list[str] = []
     for title, body in quoted_drafts().items():
         for match in re.finditer(r"([+\u2212-]?\d[\d,]*)\s*ms", body):
+            # The typographic minus is normalised to a hyphen first, so a draft using
+            # U+2212 is compared against the same evidence rather than looking novel.
             figure = match.group(1).replace("\u2212", "-")
-            digits = figure.lstrip("+-")
-            if digits in {value.lstrip("+-") for value in permitted}:
+            if figure in permitted or figure.lstrip("+") in permitted:
                 continue
-            if digits in inferred:
-                # The sentence containing it must hedge, or the number travels alone.
+            if figure.lstrip("+-") in inferred:
                 sentence = _sentence_around(body, match.end())
                 if hedge.search(sentence) is None:
                     unhedged.append(f"{title}: {match.group(0)!r} stated without a hedge")
@@ -182,27 +202,23 @@ def _sentence_around(body: str, index: int) -> str:
     return body[start + 1 : end + 1]
 
 
-def test_every_condition_figure_in_a_draft_matches_its_row() -> None:
-    """A draft naming a condition quotes that condition's figures, not another's.
+def test_a_draft_quoting_the_results_table_binds_each_figure_to_its_condition() -> None:
+    """If a draft reproduces the results table, every row must be that condition's.
 
-    The closed-list check above would pass if a draft said "`vad_2` returned 12,200 ms" —
-    a real figure, wrong row. This binds the figure to the condition it is attributed to,
+    The closed-list check above would pass if a draft said "`vad_2` returned 12,200 ms" --
+    a real figure, wrong row. This binds each figure to the condition it is attributed to,
     which is the mistake a rushed message actually makes.
 
-    Rows are read from the draft's own markdown tables rather than matched by regex. The
-    regex version stopped at the first `|`, so on a table row it matched the condition id
-    on its own, found no figures in it, and passed — including against a row carrying
-    another condition's figures.
+    Conditional by design. Neither remaining draft quotes a table: a DM is prose and the
+    X post is 280 characters, so demanding one would invent a requirement the spec does
+    not have. But a draft that *does* quote the table is checked properly -- an earlier
+    version matched condition ids by regex, stopped at the first `|`, found no figures in
+    what it matched, and so passed against a table whose rows were mismatched.
     """
-    report = comparison()
-    conditions = {entry["condition_id"]: entry for entry in report["conditions"]}
-
-    # Each condition's median and delta, as they would be written.
+    conditions = {entry["condition_id"]: entry for entry in comparison()["conditions"]}
     by_condition = {
         condition_id: {
             f"{entry['median_marker_ms']:,.0f} ms",
-            # The anchor has no delta to render, and `None` formats as neither a sign
-            # nor a figure, so it is left as an empty alternative.
             f"{entry['delta_vs_anchor_ms']:+,.0f} ms"
             if entry["delta_vs_anchor_ms"] is not None
             else "",
@@ -211,14 +227,11 @@ def test_every_condition_figure_in_a_draft_matches_its_row() -> None:
     }
 
     offenders: list[str] = []
-    seen_rows = 0
-
     for title, body in quoted_drafts().items():
         for row in _table_rows(body):
             identifier = row[0].strip().strip("`")
             if identifier not in conditions:
                 continue
-            seen_rows += 1
             figures = {
                 figure.strip()
                 for figure in re.findall(r"[+\u2212-]?\d[\d,]*\s*ms", " ".join(row))
@@ -227,12 +240,10 @@ def test_every_condition_figure_in_a_draft_matches_its_row() -> None:
             wrong = figures - allowed
             if wrong:
                 offenders.append(
-                    f"{title}: {identifier} shown with {sorted(wrong)}, expected {sorted(allowed)}"
+                    f"{title}: {identifier} shown with {sorted(wrong)}, "
+                    f"expected {sorted(allowed)}"
                 )
 
-    assert seen_rows > 0, (
-        "no draft contains a table row naming a condition, so this test checks nothing"
-    )
     assert offenders == [], (
         f"a draft attributes a figure to the wrong condition: {offenders}. Expected per "
         f"condition: {by_condition}"
@@ -310,10 +321,26 @@ def test_no_draft_claims_frequency_severity_or_customer_impact() -> None:
         "accusation of neglect": r"\b(?:nobody|no one) (?:has )?(?:responded|replied|looked)\b",
     }
 
+    # Disclaimers are stripped before scanning, and this is the whole difficulty: the
+    # drafts are *required* to name these things in order to deny them. The X post ends
+    # "no claim at all about how often this happens in production", and a scan that
+    # cannot tell a denial from a claim would forbid the sentence the issue asks for —
+    # pushing the author toward omitting the disclaimer rather than keeping it.
+    #
+    # Split on sentence enders and bullet starts, so a disclaimer does not silently
+    # excuse whatever sentence follows it.
+    disclaimers = re.compile(
+        r"no claim|nothing is claimed|cannot support|not a measurement|no figure for|"
+        r"does not claim|nor a claim",
+        re.IGNORECASE,
+    )
+
     offenders: list[str] = []
     for title, body in quoted_drafts().items():
+        units = re.split(r"(?<=[.!?])\s+|\n(?=[-*#>])", body)
+        scanned = " ".join(unit for unit in units if disclaimers.search(unit) is None)
         for description, pattern in forbidden.items():
-            if re.search(pattern, body, re.IGNORECASE) is not None:
+            if re.search(pattern, scanned, re.IGNORECASE) is not None:
                 offenders.append(f"{title}: {description}")
 
     assert offenders == [], (
@@ -359,7 +386,7 @@ def test_the_drafts_state_the_simplifications_where_a_reader_would_see_them() ->
     assert re.search(r"one model|scribe[_ ]v2[_ ]realtime", bodies), (
         "no draft names the single model the measurement covers"
     )
-    assert re.search(r"production prevalence|prevalence", bodies), (
+    assert re.search(r"prevalence", bodies), (
         "no draft disclaims a production-prevalence claim, which is the claim a reader "
         "is most likely to infer and least entitled to"
     )

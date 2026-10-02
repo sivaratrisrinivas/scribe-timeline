@@ -4,9 +4,13 @@ An independent rerun of a reported Scribe Realtime bug, with the evidence commit
 a viewer that replays it for free.
 
 **Status: the reported drift reproduces.** Four conditions × three repeats, measured
-against the live API on 2026-10-02. Roughly 100 ms per preceding automatic (VAD)
-commit, and no accumulation under manual commits. Every figure here comes from
-`make matrix` and can be re-derived from the saved run records at no cost.
+against the live API on 2026-10-02. The marker's returned timestamp moved **+100 ms**
+with one preceding automatic (VAD) commit and **+180 ms** with two, and **+0 ms** under
+manual commits — so the drift tracks each preceding commit rather than accumulating
+regardless of who triggers it. Taken per commit, those two figures suggest a step nearer
+90 ms than 100; that division is arithmetic on the deltas, not a measurement of a
+per-commit step. Every figure here comes from `make matrix` and can be re-derived from the
+saved run records at no cost.
 
 **The original finding is [elevenlabs-python#849](https://github.com/elevenlabs/elevenlabs-python/issues/849),
 filed by [@wujin941005](https://github.com/wujin941005) on 2026-08-19.** That reporter is
@@ -48,7 +52,8 @@ each commit was cut from. Click a word to hear it.
 It is built from files already in this repository. It makes no request other than for its
 own bundle, which a test asserts, and building it spent no API credit.
 
-**A 75-second walkthrough**, if you would rather watch than read:
+**A 72-second walkthrough**, if you would rather watch than read (the issue asked
+for 75; it is what the recording actually came out at):
 
 [![The walkthrough: question, credit, marker across conditions, measured differences, raw evidence, rerun command](docs/walkthrough.webm)](docs/walkthrough.webm)
 
@@ -113,13 +118,18 @@ make setup     # uv sync + npm install + export the viewer bundle
 
 That is the whole of it. `make setup` takes a fresh clone to a state where `make check`
 passes, `make viewer` serves the evidence, and `make build` produces `viewer/dist`. No
-account, no key, no network.
+account and no API key, at any point.
+
+It does need network, once. `uv sync` and `npm install` fetch the Python and JavaScript
+dependencies, which is not avoidable for any project. Everything after that — the gate,
+the viewer, the build, and re-deriving the comparison — runs offline with no credential,
+because its inputs are already committed.
 
 ```sh
 make check         # lint, typecheck, both suites. No network, no API key.
 make viewer        # serve the viewer locally (no network, no API key)
 make build         # build viewer/dist: a directory of files, hostable as-is
-make walkthrough   # re-record the 75-second video from the built viewer
+make walkthrough   # re-record the ~72-second video from the built viewer
 ```
 
 ### The exact rerun command
@@ -170,6 +180,29 @@ The original report states offsets from the clip's insertion point, which is a d
 quantity from a delta between conditions — only the step between conditions is
 comparable. Its figures were **+9 ms** with zero preceding commits, **+109 ms** with one,
 and **+209 ms** with two, and about **+10 ms** across three manual commits.
+
+### The +9 ms floor, and why this project does not reproduce it
+
+The spec behind this work singles out the report's +9 ms floor as the figure that matters
+most: an offset with *no* preceding commit is a constant baseline shift, which is a
+different and stronger finding than per-commit drift. So it is worth being explicit that
+this rerun does **not** reproduce it, rather than quietly omitting it.
+
+Computed the same way — marker timestamp minus the sample its clip was inserted at — this
+project measures **+200 ms** at the zero-commit anchor, not +9 ms. That is a real
+disagreement, and it is not resolved here.
+
+It is also not obviously a contradiction, because the quantity is not determined by the
+server alone. It contains the clip's own 120 ms of leading silence, plus the word's onset
+*within* the clip, which nobody knows precisely. Different fixtures with different padding
+put the same server behaviour at different numbers. Which is exactly why this project
+measures only the step between conditions: the floor moves with the fixture, and the step
+does not.
+
+The honest summary is that the two measurements agree on the *shape* — a per-commit step
+under VAD, none under manual commits — and disagree on the absolute offset from an
+insertion point. Anyone comparing the two sets of numbers should treat the +9 vs +200
+disagreement as open rather than settled by this work.
 
 | condition | claimed step | measured step | difference | verdict |
 | --- | --- | --- | --- | --- |
@@ -390,7 +423,7 @@ site, with every file present and correctly named on disk.
 - `scripts/generate_json_schema.py` — regenerates the schema (`make schema`)
 - `scripts/export_viewer.py` — builds the viewer's static bundle (`make viewer-export`)
 - `scripts/record_walkthrough.js` — re-records the walkthrough from the built viewer
-- `docs/walkthrough.webm` — the 75-second walkthrough
+- `docs/walkthrough.webm` — the 72-second walkthrough
 
 Four test modules guard the promises rather than the code:
 

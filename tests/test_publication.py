@@ -292,21 +292,15 @@ def test_the_mount_is_not_a_root_and_the_test_would_notice(served: str) -> None:
     This is the check that makes the other three trustworthy. If it ever goes red,
     the bug is in the harness and the results above mean nothing.
     """
-    _, body = fetch(served)
-    html = body.decode()
-    site_absolute = [
-        reference for reference in references_in(html) if reference.startswith("/")
-    ]
+    # The page is fetched so that "the harness works" is established against a real
+    # response rather than assumed.
+    fetch(served)
 
-    assert site_absolute == [], (
-        "the built page references site-absolute paths "
-        f"({', '.join(site_absolute)}). This server is rooted at the parent of dist, so "
-        "it does detect that -- which is why this assertion is reached at all."
-    )
-
-    # With no site-absolute reference in the markup, prove the server would have
-    # rejected one anyway. A 404 here means the harness has teeth; a 200 means it
-    # would have rubber-stamped the bug and every other test here would be theatre.
+    # The markup check above already refuses a site-absolute reference, so re-asserting
+    # it here was the same assertion twice in one module. What this test adds is the
+    # harness's own teeth: with the markup clean, prove the server would still have
+    # rejected a root-relative path. A 404 means the server is checking paths; a 200
+    # means it would have rubber-stamped the bug and every other test here is theatre.
     nonexistent = urljoin(served, "assets/definitely-not-a-real-bundle-file.js")
     assert status_of(nonexistent) == 404, (
         "the test server answered 200 for a file that does not exist, so it is not "

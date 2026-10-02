@@ -99,7 +99,10 @@ function serve(root) {
     let rel = url.pathname.slice(MOUNT.length);
     if (rel === "" || rel.endsWith("/")) rel += "index.html";
     const file = path.join(root, rel);
-    // Refuse anything that escapes the served root.
+    // Refuse anything that escapes the served root. Every path here comes from this
+    // script rather than from a reader, so the traversal is not a live risk -- but the
+    // server is the thing standing between the recording and the rest of the disk, and
+    // a check that costs one line is cheaper than finding out what it was protecting.
     if (!file.startsWith(root)) {
       res.writeHead(403).end("no");
       return;
@@ -249,7 +252,11 @@ async function main() {
   await context.close();
   await browser.close();
 
-  // Playwright names its own file; move it to the requested path.
+  // Playwright names its own output file, and nothing here can ask it for a specific
+  // name. So it is renamed afterwards -- which means a run interrupted before this line
+  // leaves a second `.webm` in `docs/` with an unrecognised name, and
+  // tests/test_walkthrough.py fails on any recording that is not the documented path
+  // rather than letting a reader watch a stale one.
   const produced = fs
     .readdirSync(path.dirname(OUT))
     .map((f) => path.join(path.dirname(OUT), f))
