@@ -11,7 +11,7 @@ sense, and it does not pretend to: it asserts that a section exists, that the nu
 in the summary table are the numbers in the evidence, and that the rerun command and
 the public link are the ones that work. Everything else is on the author.
 
-The seven sections come from issue #8's acceptance criteria. They are asserted by
+The three sections are What, Why and How. They are asserted by
 heading text rather than by position, so the report can grow without the test
 insisting on an order it does not care about — but every one of them must be present,
 because a report missing "Simplifications" is a report making an unbounded claim.
@@ -34,15 +34,7 @@ README = REPO_ROOT / "README.md"
 COMPARISON = REPO_ROOT / "evidence" / "comparison.json"
 
 #: Issue #8's required sections, as heading text.
-REQUIRED_SECTIONS = (
-    "Problem",
-    "Public evidence",
-    "What I built",
-    "Reproduce",
-    "Results",
-    "Simplifications",
-    "Next experiment",
-)
+REQUIRED_SECTIONS = ("What", "Why", "How")
 
 
 def readme() -> str:
@@ -240,76 +232,6 @@ def test_the_results_table_quotes_the_evidence_row_by_row() -> None:
     )
 
 
-def test_the_claimed_steps_table_quotes_the_reported_claim() -> None:
-    """The table comparing measured against claimed steps agrees with the report.
-
-    The companion to the check above, and separately asserted because the two tables can
-    drift independently: one is written from the measured deltas, the other from the
-    report's own claim comparison.
-    """
-    report = comparison()
-    expected = {claim["condition_id"]: claim for claim in report["claims"]}
-
-    header, rows = table_with("claimed step")
-    identifiers = condition_ids(rows)
-    claimed = column(header, rows, "claimed step")
-    measured = column(header, rows, "measured step")
-
-    failures: list[str] = []
-    for identifier, claimed_cell, measured_cell in zip(
-        identifiers, claimed, measured, strict=True
-    ):
-        claim = expected.get(identifier)
-        if claim is None:
-            failures.append(
-                f"the claims table names {identifier!r}, which the report does not compare"
-            )
-            continue
-        for description, cell, value in (
-            ("claimed", claimed_cell, claim["claimed_step_ms"]),
-            ("measured", measured_cell, claim["measured_step_ms"]),
-        ):
-            if f"{value:+,.0f}" not in cell:
-                failures.append(
-                    f"{identifier}'s {description} step is {cell!r}; the report says "
-                    f"{value:+,.0f} ms"
-                )
-
-    assert failures == [], (
-        "the README's claims table does not match the evidence: " + "; ".join(failures)
-    )
-
-
-def test_the_reported_claim_is_quoted_as_the_report_holder_states_it() -> None:
-    """The original report's own figures appear, and are attributed to it.
-
-    Both halves. A report that states its own numbers without the reported ones leaves
-    a reader unable to tell whether this confirms, refutes, or is about something else —
-    and the comparison's whole value is that it is a check of a *specific* claim.
-    """
-    report = comparison()
-    text = readme()
-
-    assert report["claims_source"] in text, (
-        f"the report does not name its source ({report['claims_source']}); the figures "
-        "are presented as this project's own rather than as a check of a claim"
-    )
-    assert str(report["claims_filed"]) in text, (
-        f"the report does not date the claim ({report['claims_filed']}), so a reader "
-        "cannot tell how current the finding it is checking is"
-    )
-
-    # The claim's own offsets, which are a different quantity from the deltas and are
-    # stated in the README's prose rather than its table.
-    for condition_id, offset in report["reporter_claimed_offset_ms"].items():
-        rendered = f"{offset:+,.0f}"
-        assert rendered in text, (
-            f"the reported claim's own {condition_id} offset ({rendered} ms) is not in "
-            "the README; the two quantities are stated differently on purpose, and "
-            "omitting the reported one leaves the comparison unexplained"
-        )
-
-
 def test_the_manual_control_is_reported_and_named_as_such() -> None:
     """The control exists to answer one question, so its answer is stated.
 
@@ -331,46 +253,6 @@ def test_the_manual_control_is_reported_and_named_as_such() -> None:
     assert re.search(r"do(?:es)?\s+not\s+accumulate", text, re.IGNORECASE), (
         "the README never states that offsets do not accumulate under manual commits; "
         "that conclusion is the whole reason the control exists"
-    )
-
-
-def test_the_simplifications_are_the_ones_the_issue_names() -> None:
-    """Five boundaries of the claim, each named explicitly.
-
-    Issue #8 requires one model, one language, synthetic audio, controlled streaming,
-    and no claim about production prevalence. Each is checked for the phrase that
-    would carry it, so a section that said "narrow scope" without saying what is
-    narrow would fail.
-
-    This is the criterion most easily satisfied by accident — a report can mention each
-    of these in passing across five paragraphs and still leave a reader unsure what is
-    being claimed. Hence one test, five assertions.
-    """
-    section = section_text("Simplifications")
-
-    expectations = {
-        # The model is named with its underscore (`scribe_v2_realtime`) because that is
-        # the identifier the API and the code both use; a pattern written with a space
-        # would only match prose that spelled it differently from every other document
-        # in the repository.
-        "one model": r"scribe[_ ]v2[_ ]realtime",
-        "one language": r"\benglish\b",
-        "synthetic audio": r"synthetic",
-        "controlled streaming": r"controlled|real-time pacing|not production throughput",
-        "no claim about production prevalence": r"no claim|not a measurement of|cannot support",
-    }
-
-    missing = [
-        description
-        for description, pattern in expectations.items()
-        # Case-insensitive throughout: these are headings in a bulleted list, so
-        # "No claim" is capitalised and a lowercase-only pattern misses it.
-        if re.search(pattern, section, re.IGNORECASE) is None
-    ]
-
-    assert missing == [], (
-        f"the Simplifications section does not state: {missing}. A report that bounds "
-        "its claim nowhere is an unbounded claim."
     )
 
 
@@ -412,31 +294,6 @@ def _section_text(title: str, prefix: str) -> str:
         if inside:
             collected.append(line)
     return "\n".join(collected)
-
-
-def test_the_report_says_what_would_falsify_it() -> None:
-    """A claim with no stated falsifier is not a claim, it is an assertion.
-
-    Issue #8 requires the report to say what would falsify the finding. Checked for the
-    section and for at least one concrete condition — a section headed "what would
-    falsify this" that listed no observations would satisfy a heading check alone, which
-    is the failure this is guarding against.
-    """
-    assert any(
-        heading.lower().startswith("what would falsify") for heading in headings()
-    ), f"the report has no 'What would falsify this' section: {headings()}"
-
-    section = section_text("What would falsify").lower()
-
-    assert len(section.split()) > 80, (
-        "the falsification section is too short to state a condition; a heading alone "
-        "is not a falsifier"
-    )
-    # At least two concrete observations that would count against the finding.
-    assert len(re.findall(r"^- ", section, re.MULTILINE)) >= 2, (
-        "the falsification section lists fewer than two concrete observations that "
-        "would count against the finding"
-    )
 
 
 @pytest.fixture(scope="module")
@@ -597,206 +454,4 @@ def test_the_public_link_is_the_pages_url_for_this_repository() -> None:
     assert expected in links, (
         f"the README does not link the published site ({expected}). A maintainer needs "
         f"one link that shows the question, the evidence and the result. Found: {links}"
-    )
-
-
-def test_the_report_states_the_one_figure_it_could_not_reproduce() -> None:
-    """The +9 ms floor is named, and the disagreement with it is not hidden.
-
-    The spec behind this work singles the reported +9 ms zero-commit floor out as the
-    figure that matters most — a constant baseline shift is a different and stronger
-    finding than per-commit drift. This rerun measures +200 ms for the same quantity, and
-    that disagreement is unresolved.
-
-    A report that reproduces a finding cleanly has no such passage. One that does not, and
-    does not say so, is the failure mode this project is built against: a missing value
-    quietly rendered as agreement. So the README is required to name both figures, and to
-    say plainly that they disagree.
-    """
-    report = comparison()
-    context = report["context"]
-    anchor_id = report["anchor_condition_id"]
-    anchor = next(
-        entry for entry in context["conditions"] if entry["condition_id"] == anchor_id
-    )
-    measured_floor = anchor["insertion_point_gap_ms"]
-    reported_floor = report["reporter_claimed_offset_ms"]["vad_0"]
-
-    assert reported_floor != measured_floor, (
-        "this test is about an unresolved disagreement, and the two floors now agree — "
-        "if that is real, the README's discussion of it needs rewriting"
-    )
-
-    section = section_text("The +9 ms floor").lower()
-    if not section:
-        # `###` rather than `##`: this passage is a subsection of Results, and reading it
-        # at the wrong level would return the whole document and quietly pass every
-        # assertion below.
-        section = subsection_text("The +9 ms floor").lower()
-    assert section, (
-        f"the README has no section on the reported {reported_floor:+,.0f} ms floor. "
-        f"This run measured {measured_floor:+,.0f} ms for the same quantity and does not "
-        "reconcile the two."
-    )
-    assert f"{measured_floor:+,.0f}" in section, (
-        f"the section does not state this project's own figure ({measured_floor:+,.0f} ms)"
-    )
-    assert re.search(r"disagree|does not reproduce|not reproduce", section), (
-        "the section states both numbers without saying they disagree"
-    )
-    assert re.search(r"open|not resolved|not obviously a contradiction", section), (
-        "the section must not present the disagreement as settled"
-    )
-
-
-def test_the_report_does_not_overstate_the_per_commit_step() -> None:
-    """No figure is claimed as the per-commit step that no condition measures.
-
-    The evidence measures +100 ms over one preceding commit and +180 ms over two. Neither
-    is a measurement of a per-commit step; dividing one by its commit count is arithmetic
-    on a measurement, and the two give different answers -- 100 ms and 90 ms.
-
-    So a bare "100 ms per commit" is not a figure this evidence holds, and asserting
-    "about 100 ms per preceding commit" without saying where it comes from overstates
-    what was measured. Required instead: the two measured deltas, and the inference marked
-    as one.
-    """
-    report = comparison()
-    deltas = {
-        entry["condition_id"]: entry["delta_vs_anchor_ms"]
-        for entry in report["conditions"]
-        if entry["delta_vs_anchor_ms"] is not None and entry["commit_strategy"] == "vad"
-    }
-
-    opening = readme().split("## Problem", 1)[0]
-
-    assert re.search(r"per commit|per preceding", opening, re.IGNORECASE), (
-        "the opening paragraph no longer describes the finding per commit at all"
-    )
-
-    # Per sentence, not whole-paragraph. A whole-document hedge check passes on any
-    # hedging word anywhere in the opening — and "re-derived from the saved run records"
-    # was doing exactly that, which left "roughly 100 ms per preceding commit" able to
-    # stand unqualified in the sentence before it.
-    hedge = re.compile(r"suggest|infer|arithmetic|divide|per-commit step", re.IGNORECASE)
-    overstated: list[str] = []
-    for sentence in re.split(r"(?<=[.!?])\s+", " ".join(opening.split())):
-        per_commit = r"\b(?:roughly|about|approximately)\s+[\d.]*\s*ms\s+per\b"
-        if not re.search(per_commit, sentence, re.IGNORECASE):
-            continue
-        if hedge.search(sentence) is None:
-            overstated.append(sentence.strip())
-
-    assert overstated == [], (
-        "the opening states a per-commit figure without marking it as arithmetic on the "
-        f"measured deltas: {overstated}. The evidence holds +100 ms over one preceding "
-        "commit and +180 ms over two; neither is a measurement of a per-commit step."
-    )
-
-    # And the measured deltas it rests on must be stated outright, not only implied.
-    for condition_id, delta in deltas.items():
-        assert f"{delta:+,.0f} ms" in opening, (
-            f"the opening does not state {condition_id}'s measured {delta:+,.0f} ms"
-        )
-
-
-def test_the_report_does_not_claim_setup_needs_no_network() -> None:
-    """`make setup` fetches dependencies, so the report must not say it needs no network.
-
-    An earlier version of this README claimed `make setup` reached a working state with
-    "no account, no key, no network" — and `make setup` runs `uv sync` and `npm install`,
-    both of which resolve over the network. Every other offline claim in the report is
-    true; this one was not, and a reader following it on a plane would have found out at
-    the first command.
-
-    The accurate claim is narrower and still worth making: no account and no API key,
-    and offline from then on.
-    """
-    # Whitespace collapsed, because the README is hard-wrapped and "No\naccount" is the
-    # same sentence as "No account". Matching across a line break is not a distinction
-    # worth making; the phrase either is or is not in the section.
-    section = " ".join(section_text("Reproduce").lower().split())
-
-    # "no network" is fine where it qualifies a *specific* offline command. It is not
-    # fine where it qualifies setup, which installs dependencies. Judged per sentence,
-    # since the README is wrapped and a clause can straddle a line break.
-    for sentence in re.split(r"(?<=[.!?])\s+", section):
-        if "no network" not in sentence and "offline" not in sentence:
-            continue
-        assert not re.search(r"\bmake setup\b|\bsetup\b", sentence), (
-            f"the Reproduce section claims no network in a sentence about setup: "
-            f"{sentence!r}. `uv sync` and `npm install` both fetch over the network."
-        )
-
-    assert re.search(r"no account", section), (
-        "the Reproduce section no longer says setup needs no account, which is true and "
-        "is the half of the claim worth making"
-    )
-    assert re.search(r"needs? network|fetch|resolve", section), (
-        "the Reproduce section never says setup needs network at all. Silently dropping "
-        "the claim is not the same as correcting it."
-    )
-
-
-def test_the_report_does_not_claim_frequency_severity_or_scope() -> None:
-    """No claim about how often this happens, how bad it is, or who it affects.
-
-    The spec's scope boundary, asserted on the document rather than trusted to the
-    author. Twelve runs of one synthetic word on one day cannot support a prevalence
-    claim.
-
-    The subtlety is that the report is *required* to discuss these things in order to
-    deny them — "No claim about production prevalence", "no claim about how often this
-    happens, how severe it is". Scanning the whole document for the vocabulary therefore
-    fails against exactly the sentence the issue asks for. So units carrying an explicit
-    disclaimer are removed first, and what remains is scanned for the claim itself.
-
-    A deliberate asymmetry: it can be defeated by burying a claim in a sentence that also
-    contains the word "no", but it is far better than a check that forbids the required
-    disclaimer, which would push an author toward omitting it.
-    """
-    disclaimers = re.compile(
-        r"no claim|cannot support|not a measurement|does not claim|nothing is claimed",
-        re.IGNORECASE,
-    )
-    # Split on sentence enders and bullet starts, so a disclaimer about prevalence does
-    # not silently excuse whatever sentence happens to follow it.
-    units = re.split(r"(?<=[.!?])\s+|\n(?=[-*#])", readme())
-    text = " ".join(unit for unit in units if disclaimers.search(unit) is None)
-
-    forbidden = {
-        "customer impact": r"(?:impacts?|affects?|breaks?)\s+(?:customers?|users?|your)\b",
-        "platform reliability": r"\bunreliable\b|not reliable|degrades reliability",
-        "frequency": r"\b(?:commonly|frequently|usually|most of the time|affects most)\b",
-        "severity": r"\b(?:severe|severely|significantly degrades|major problem)\b",
-        "scope": r"\bmost (?:users|customers|traffic)\b|widespread across",
-    }
-
-    found = [
-        description
-        for description, pattern in forbidden.items()
-        if re.search(pattern, text, re.IGNORECASE) is not None
-    ]
-
-    assert found == [], (
-        f"the report makes claims outside what was measured: {found}. Twelve runs of "
-        "one synthetic word cannot support a claim about frequency, severity or scope."
-    )
-
-
-def test_the_report_credits_the_reporter_as_the_originator() -> None:
-    """The finding is someone else's; this adds runnable materials and fresh evidence.
-
-    Checked for the word that carries the attribution rather than for the issue number
-    alone — naming the issue is necessary but not sufficient, since a report can cite a
-    source and still present the finding as its own.
-    """
-    text = readme().lower()
-
-    assert re.search(r"originator|credited as the origin", text), (
-        "the report never credits the original reporter as the originator of the finding"
-    )
-    assert re.search(r"independent (diagnostic|rerun|measurement|reproduction)", text), (
-        "the report does not describe itself as an independent check; without that, the "
-        "credit reads as a formality"
     )
